@@ -1,7 +1,6 @@
 from data_loader import DataGenerator
 from model import PointRegNet
 from keras.optimizers import SGD
-from keras.utils import plot_model
 import os
 import matplotlib
 matplotlib.use('AGG')
@@ -30,28 +29,12 @@ def plot_history(history, result_dir):
     plt.savefig(os.path.join(result_dir, 'model_loss.png'))
     plt.close()
 
-
-def save_history(history, result_dir):
-    loss = history.history['loss']
-    acc = history.history['acc']
-    val_loss = history.history['val_loss']
-    val_acc = history.history['val_acc']
-    nb_epoch = len(acc)
-
-    with open(os.path.join(result_dir, 'result.txt'), 'w') as fp:
-        fp.write('epoch\tloss\tacc\tval_loss\tval_acc\n')
-        for i in range(nb_epoch):
-            fp.write('{}\t{}\t{}\t{}\t{}\n'.format(
-                i, loss[i], acc[i], val_loss[i], val_acc[i]))
-        fp.close()
-
-
 def main():
     train_file = './ModelNet40/ply_data_train.h5'
     test_file = './ModelNet40/ply_data_test.h5'
 
     epochs = 100
-    batch_size = 32
+    batch_size = 16 * 3
 
     train = DataGenerator(train_file, batch_size, train=True)
     val = DataGenerator(test_file, batch_size, train=False)
@@ -88,8 +71,6 @@ def main():
     '''
 
     model = PointRegNet(2048, 2048)
-    model.summary()
-    plot_model(model, show_shapes=True, to_file='model.png')
     lr = 0.0001
     opt = SGD(lr=lr)
     model.compile(optimizer=opt,
@@ -103,10 +84,9 @@ def main():
                                   epochs=epochs,
                                   validation_data=val.generator(),
                                   validation_steps=2468 // batch_size,
-                                  verbose=2)
+                                  verbose=1)
 
     plot_history(history, './results/')
-    #save_history(history, './results/')
     model.save_weights('./results/pointnet_weights.h5')
 
 if __name__ == '__main__':

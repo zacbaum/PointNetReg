@@ -2,7 +2,7 @@ from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNor
 from keras.layers import Reshape, Lambda, concatenate
 from keras.models import Model
 from keras.engine.topology import Layer
-from keras.utils import multi_gpu_model
+from keras.utils import multi_gpu_model, plot_model
 import numpy as np
 import tensorflow as tf
 
@@ -102,12 +102,16 @@ def PointRegNet(fixed_len=2048, moving_len=2048, multi_gpu=True):
 
 	combined_inputs = concatenate([fixed.output, moving.output])
 	x = Dense(512, activation='relu')(combined_inputs)
+	x = Dropout(0.5)(x)
 	x = Dense(256, activation='relu')(x)
-	x = Dense(128, activation='relu')(x)
-	x = Dense(16, activation='softmax')(x)
+	x = Dropout(0.5)(x)
+	x = Dense(16, activation='linear')(x)
 	x = Reshape((4, 4))(x)
 
 	model = Model(inputs=[fixed.input, moving.input], outputs=x)
+
+    model.summary()
+    plot_model(model, show_shapes=True, to_file='model.png')
 
 	if multi_gpu:
 		try:
