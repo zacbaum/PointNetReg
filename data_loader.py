@@ -8,24 +8,61 @@ import numpy as np
 import h5py
 import random
 from keras.utils import np_utils
+from keras.utils import Sequence
+import random
 
+def drand(min_d, max_d):
+    d = [random.uniform(min_d, max_d), random.uniform(min_d, max_d), random.uniform(min_d, max_d)]
+    return d
 
-class DataGenerator:
-    def __init__(self, file_name, batch_size, nb_classes=40, train=True):
+def qrand():
+    pn = 0
+    while pn < 1e-5:
+        p = [random.random(), 2 * (random.random() - 0.5), 2 * (random.random() - 0.5), 2 * (random.random() - 0.5)]
+        pn = np.linalg.norm(p)
+    return p / pn
+
+def qnorm(p):
+    pn = np.linalg.norm(p)
+    if pn != 0 and pn > 1e-5:
+        # This prevents the no rotation quaternion [1; 0; 0; 0] and undefined [0; 0; 0; 0]
+        # as well as numerically instable quarternions (pn < 1e-5).
+        return p / pn
+
+def q2r(q):
+    q = qnorm(q)
+    o = q[0]
+    x = q[1]
+    y = q[2]
+    z = q[3]
+    R = np.array([[o**2 + x**2 - y**2 - z**2,  2 * (x * y - o * z),        2 * (x * z + o * y)],
+                  [2 * (x * y + o * z),        o**2 + y**2 - x**2 - z**2,  2 * (y * z - o * x)],
+                  [2 * (x * z - o * y),        2 * (y * z + o * x),        o**2 + z**2 - x**2 - y**2]])
+    return R
+
+def get_T(R, d):
+    T = np.empty((4, 4))
+    T[:3, :3] = R
+    T[:3, 3] = d
+    T[3, :] = [0, 0, 0, 1]
+    return T
+
+class DataGenerator(Sequence):
+    def __init__(self, file_name, batch_size, train=True):
         self.fie_name = file_name
         self.batch_size = batch_size
-        self.nb_classes = nb_classes
         self.train = train
 
     @staticmethod
     def rotate_point_cloud(data):
-        """ Randomly rotate the point clouds to augument the dataset
+        '''
+        Randomly rotate the point clouds to augument the dataset
             rotation is per shape based along up direction
             Input:
               Nx3 array, original point clouds
             Return:
               Nx3 array, rotated point clouds
-        """
+        '''
         rotation_angle = np.random.uniform() * 2 * np.pi
         cosval = np.cos(rotation_angle)
         sinval = np.sin(rotation_angle)
@@ -37,12 +74,13 @@ class DataGenerator:
 
     @staticmethod
     def jitter_point_cloud(data, sigma=0.01, clip=0.05):
-        """ Randomly jitter points. jittering is per point.
+        '''
+        Randomly jitter points. jittering is per point.
             Input:
               Nx3 array, original point clouds
             Return:
               Nx3 array, jittered point clouds
-        """
+        '''
         N, C = data.shape
         assert (clip > 0)
         jittered_data = np.clip(sigma * np.random.randn(N, C), -1 * clip, clip)
@@ -59,19 +97,41 @@ class DataGenerator:
                 batch_start = i * self.batch_size
                 batch_end = (i + 1) * self.batch_size
                 batch_index = index[batch_start: batch_end]
-                X = []
+                X1 = []
+                X2 = []
                 Y = []
                 for j in batch_index:
-                    item = f['data'][j]
-                    label = f['label'][j]
+                    item1 = f['data'][j]
+                    item2 = f['data'][j]
                     if self.train:
-                        is_rotate = random.randint(0, 1)
-                        is_jitter = random.randint(0, 1)
-                        if is_rotate == 1:
-                            item = self.rotate_point_cloud(item)
-                        if is_jitter == 1:
-                            item = self.jitter_point_cloud(item)
-                    X.append(item)
-                    Y.append(label[0])
-                Y = np_utils.to_categorical(np.array(Y), self.nb_classes)
-                yield np.array(X), Y
+
+                        '''
+                        is_rotate1 = random.randint(0, 1)
+                        is_jitter1 = random.randint(0, 1)
+                        if is_rotate1 == 1:
+                            item1 = self.rotate_point_cloud(item1)
+                        if is_jitter1 == 1:
+                            item1 = self.jitter_point_cloud(item1)
+
+                        is_rotate2 = random.randint(0, 1)
+                        is_jitter2 = random.randint(0, 1)
+                        if is_rotate2 == 1:
+                            item2 = self.rotate_point_cloud(item2)
+                        if is_jitter2 == 1:
+                            item2 = self.jitter_point_cloud(item2)
+                        '''
+
+                    R = q2r(qnorm(qrand()))
+                    d = drand(-10, 10)
+                    T = get_T(R, d)
+                    item1_moved = []
+                    for point in item1:
+                        point_with_1 = np.append(point, 1)
+                        new_point_with_1 = np.dot(T, point_with_1)
+                        new_point = new_point_with_1[:-1]
+                        item1_moved.append(new_point)
+
+                    X1.append(item1_moved)
+                    X2.append(item2)
+                    Y.append(T)
+                yield [np.array(X1), np.array(X2)], np.array(Y)
