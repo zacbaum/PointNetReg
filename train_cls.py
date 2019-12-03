@@ -1,11 +1,11 @@
 from data_loader import DataGenerator
-from model_cls import PointNet
-from keras.callbacks import ModelCheckpoint
-from keras.optimizers import Adam
-from schedules import onetenth_50_75
+from model import PointRegNet
+from keras.optimizers import SGD
+from keras.utils import plot_model
 import os
 import matplotlib
 matplotlib.use('AGG')
+from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.pyplot as plt
 
 
@@ -47,23 +47,54 @@ def save_history(history, result_dir):
 
 
 def main():
-    nb_classes = 40
     train_file = './ModelNet40/ply_data_train.h5'
     test_file = './ModelNet40/ply_data_test.h5'
 
     epochs = 100
     batch_size = 32
 
-    train = DataGenerator(train_file, batch_size, nb_classes, train=True)
-    val = DataGenerator(test_file, batch_size, nb_classes, train=False)
+    train = DataGenerator(train_file, batch_size, train=True)
+    val = DataGenerator(test_file, batch_size, train=False)
 
-    model = PointNet(nb_classes)
+    '''
+    data = []     # store all the generated data batches
+    labels = []   # store all the generated label batches
+    max_iter = 10  # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
+    i = 0
+    for d, l in train.generator():
+        data.append(d)
+        labels.append(l)
+        i += 1
+        if i == max_iter:
+            break
+
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+
+    x1 = [i[0] for i in data[0][0][0]]
+    y1 = [i[1] for i in data[0][0][0]]
+    z1 = [i[2] for i in data[0][0][0]]
+
+    x2 = [i[0] for i in data[0][1][0]]
+    y2 = [i[1] for i in data[0][1][0]]
+    z2 = [i[2] for i in data[0][1][0]]
+
+    ax.scatter(x1, y1, z1, c='r', marker='o')
+    ax.scatter(x2, y2, z2, c='b', marker='o')
+
+    plt.show()
+    plt.savefig('pre_reg-scatter.png', dpi=1000)
+    plt.close()
+    '''
+
+    model = PointRegNet(2048, 2048)
     model.summary()
+    plot_model(model, show_shapes=True, to_file='model.png')
     lr = 0.0001
-    adam = Adam(lr=lr)
-    model.compile(optimizer=adam,
-                  loss='categorical_crossentropy',
-                  metrics=['accuracy'])
+    opt = SGD(lr=lr)
+    model.compile(optimizer=opt,
+                  loss='mean_squared_error',
+                  metrics=['mse'])
     if not os.path.exists('./results/'):
         os.mkdir('./results/')
 
@@ -72,13 +103,11 @@ def main():
                                   epochs=epochs,
                                   validation_data=val.generator(),
                                   validation_steps=2468 // batch_size,
-                                  callbacks=[checkpoint, onetenth_50_75(lr)],
-                                  verbose=1)
+                                  verbose=2)
 
     plot_history(history, './results/')
     #save_history(history, './results/')
     model.save_weights('./results/pointnet_weights.h5')
-
 
 if __name__ == '__main__':
     main()
