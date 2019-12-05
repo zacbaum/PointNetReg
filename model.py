@@ -1,8 +1,9 @@
-from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNormalization, Dense
-from keras.layers import Reshape, Lambda, concatenate
+from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNormalization, Dense, GlobalMaxPooling1D
+from keras.layers import Reshape, Lambda, concatenate, multiply
 from keras.models import Model
 from keras.engine.topology import Layer
 from keras.utils import multi_gpu_model, plot_model
+from keras import backend as K
 import numpy as np
 import tensorflow as tf
 
@@ -37,9 +38,8 @@ class MatMul(Layer):
 		return tuple(output_shape)
 
 
-def create_PointNet_base(input_len):
+def PointNet_features(input_len=None):
 	input_points = Input(shape=(input_len, 3))
-	# issues
 	# input transformation net
 	x = Conv1D(64, 1, activation='relu')(input_points)
 	x = BatchNormalization()(x)
@@ -90,33 +90,50 @@ def create_PointNet_base(input_len):
 
 	# global feature
 	global_feature = MaxPooling1D(pool_size=input_len)(g)
-	global_feature = Reshape((-1,))(global_feature)
 	model = Model(inputs=input_points, outputs=global_feature)
 
 	return model
 
-def PointRegNet(fixed_len=2048, moving_len=2048, multi_gpu=True):
+def ConditionalTransformerNet(fixed_len, moving_len, conditional_len, multi_gpu=True, verbose=False):
 
-	fixed = create_PointNet_base(fixed_len)
-	moving = create_PointNet_base(moving_len)
+	fixed = PointNet_features(fixed_len)
+	moving = PointNet_features(moving_len)
 
 	combined_inputs = concatenate([fixed.output, moving.output])
-	x = Dense(512, activation='relu')(combined_inputs)
+
+	x = Dense(1024, activation='relu')(combined_inputs)
+	x = Dropout(0.5)(x)
+	x = Dense(1024, activation='relu')(x)
+	x = Dropout(0.5)(x)
+	x = Dense(512, activation='relu')(x)
+	x = Dropout(0.5)(x)
+	x = Dense(512, activation='relu')(x)
 	x = Dropout(0.5)(x)
 	x = Dense(256, activation='relu')(x)
+	x = Dense(conditional_len * 3, activation='linear')(x)
+	x = Reshape((-1, 3))(x)
+
+	conditional_input = Input(shape=(conditional_len, 3))
+	combined_inputs = multiply([x, conditional_input])
+	x = Dense(1024, activation='relu')(combined_inputs)
 	x = Dropout(0.5)(x)
-	x = Dense(16, activation='linear')(x)
-	x = Reshape((4, 4))(x)
+	x = Dense(1024, activation='relu')(x)
+	x = Dropout(0.5)(x)
+	x = Dense(512, activation='relu')(x)
+	x = Dropout(0.5)(x)
+	x = Dense(512, activation='relu')(x)
+	x = Dropout(0.5)(x)
+	x = Dense(256, activation='relu')(x)
+	x = Dense(3, activation='linear')(x)
 
-	model = Model(inputs=[fixed.input, moving.input], outputs=x)
+	model = Model(inputs=[fixed.input, moving.input, conditional_input], outputs=x)
 
-    model.summary()
-    plot_model(model, show_shapes=True, to_file='model.png')
+	if verbose: model.summary()
+	plot_model(model, show_shapes=True, to_file='model.png')
 
 	if multi_gpu:
 		try:
 			model = multi_gpu_model(model)	
 		except:
 			pass
-
 	return model
