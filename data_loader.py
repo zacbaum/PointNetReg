@@ -99,10 +99,15 @@ class DataGenerator(Sequence):
                 batch_index = index[batch_start: batch_end]
                 X1 = []
                 X2 = []
+                X3 = []
                 Y = []
                 for j in batch_index:
-                    item1 = f['data'][j]
-                    item2 = f['data'][j]
+                    moving = f['data'][j]
+                    moving = moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
+                    fixed = f['data'][j]
+                    fixed = fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.8)), :]
+                    ground_truth = f['data'][j]
+                    ground_truth = ground_truth[np.random.randint(ground_truth.shape[0], size=int(ground_truth.shape[0] * 0.8)), :]
                     if self.train:
 
                         '''
@@ -122,16 +127,17 @@ class DataGenerator(Sequence):
                         '''
 
                     R = q2r(qnorm(qrand()))
-                    d = drand(-10, 10)
+                    d = drand(-1, 1)
                     T = get_T(R, d)
-                    item1_moved = []
-                    for point in item1:
+                    moving_moved = []
+                    for point in moving:
                         point_with_1 = np.append(point, 1)
                         new_point_with_1 = np.dot(T, point_with_1)
                         new_point = new_point_with_1[:-1]
-                        item1_moved.append(new_point)
+                        moving_moved.append(new_point)
 
-                    X1.append(item1_moved)
-                    X2.append(item2)
-                    Y.append(T)
-                yield [np.array(X1), np.array(X2)], np.array(Y)
+                    X1.append(fixed)
+                    X2.append(moving_moved)
+                    X3.append(moving_moved)
+                    Y.append(ground_truth)
+                yield [np.array(X1), np.array(X2), np.array(X3)], np.array(Y)
