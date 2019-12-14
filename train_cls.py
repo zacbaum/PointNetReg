@@ -1,6 +1,7 @@
+from callbacks import Prediction_Plotter
 from data_loader import DataGenerator
-from keras.optimizers import SGD
-from losses import sorted_mse_loss
+from keras.optimizers import SGD, Adam
+from losses import sorted_mse_loss, nll, sorted_nll, kl_divergence, sorted_kl_divergence
 from model import ConditionalTransformerNet
 from mpl_toolkits.mplot3d import Axes3D
 import h5py
@@ -9,140 +10,161 @@ import matplotlib
 import matplotlib.pyplot as plt
 import os
 import tensorflow as tf
+import tensorflow_probability as tfp
+
+from keras import backend as K
+import numpy as np
+
 matplotlib.use('AGG')
 
-def plot_history(history, result_dir):
-    plt.plot(history.history['acc'], marker='.')
-    plt.plot(history.history['val_acc'], marker='.')
-    plt.title('model accuracy')
-    plt.xlabel('epoch')
-    plt.ylabel('accuracy')
-    plt.grid()
-    plt.legend(['acc', 'val_acc'], loc='lower right')
-    plt.savefig(os.path.join(result_dir, 'model_accuracy.png'))
+def plot_results(attribute, output, filename):
+    plt.figure(figsize=(16,10))
+    for name, history in output:
+        val = plt.plot(history.epoch, history.history['val_' + attribute], '--', label=name.title()+' Val')
+        plt.plot(history.epoch, history.history[attribute], color=val[0].get_color(), label=name.title()+' Train')
+    plt.xlabel('Epochs')
+    plt.ylabel(attribute)
+    plt.legend()
+    plt.xlim([0, max(history.epoch)])
+    plt.savefig(filename + '.png', dpi=250)
     plt.close()
-
-    plt.plot(history.history['loss'], marker='.')
-    plt.plot(history.history['val_loss'], marker='.')
-    plt.title('model loss')
-    plt.xlabel('epoch')
-    plt.ylabel('loss')
-    plt.grid()
-    plt.legend(['loss', 'val_loss'], loc='upper right')
-    plt.savefig(os.path.join(result_dir, 'model_loss.png'))
-    plt.close()
-
-
-class Prediction_Plotter(keras.callbacks.Callback):
-    def __init__(self, X_val, Y_val):
-        self.X_val = X_val
-        self.Y_val = Y_val
-
-    def on_train_begin(self, logs={}):
-        pass
-
-    def on_epoch_end(self, epoch, logs={}):    
-        plt.clf()
-        pred = self.model.predict(self.X_val)
-        
-        fig = plt.figure()
-        ax = fig.add_subplot(111, projection='3d')
-
-        x_true = [i[0] for i in self.Y_val]
-        y_true = [i[1] for i in self.Y_val]
-        z_true = [i[2] for i in self.Y_val]
-
-        x_pred = [i[0] for i in pred]
-        y_pred = [i[1] for i in pred]
-        z_pred = [i[2] for i in pred]
-
-        ax.scatter(x_true, y_true, z_true, c='y', marker='.')
-        ax.scatter(x_pred, y_pred, z_pred, c='g', marker='.')
-
-        plt.show()
-        plt.savefig('in_training_reg-scatter.png', dpi=1000)
-        plt.close()
-
 
 def main():
     train_file = './ModelNet40/ply_data_train.h5'
     test_file = './ModelNet40/ply_data_test.h5'
 
-    epochs = 10
+    num_epochs = 10
     batch_size = 32 * 3
 
     train = DataGenerator(train_file, batch_size, train=True)
-    val = DataGenerator(test_file, batch_size, train=False)
-
-    data = []     # store all the generated data batches
-    labels = []   # store all the generated ground_truth batches
-    max_iter = 1  # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
+    
+    train_data = []     # store all the generated data batches
+    train_labels = []   # store all the generated ground_truth batches
+    max_iter = 1        # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
     i = 0
     for d, l in train.generator():
-        data.append(d)
-        labels.append(l)
+        train_data.append(d)
+        train_labels.append(l)
+        i += 1
+        if i == max_iter:
+            break
+    fixed_len = train_data[0][0].shape[1]
+    moving_len = train_data[0][1].shape[1]
+
+    assert fixed_len == moving_len, 'Lengths not consistent'
+    num_points = fixed_len
+
+    first_train_X = train_data[0]
+    first_train_Y = train_labels[0]
+    Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, 'train')
+
+    val = DataGenerator(test_file, batch_size, train=False)
+
+    val_data = []     # store all the generated data batches
+    val_labels = []   # store all the generated ground_truth batches
+    max_iter = 1      # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
+    i = 0
+    for d, l in val.generator():
+        val_data.append(d)
+        val_labels.append(l)
         i += 1
         if i == max_iter:
             break
 
+    first_val_X = val_data[0]
+    first_val_Y = val_labels[0]
+    Prediction_Plot_Val = Prediction_Plotter(first_val_X, first_val_Y, 'val')
+
+    '''
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
-    x1 = [i[0] for i in data[0][0][0]] # Fixed X (Red)
-    y1 = [i[1] for i in data[0][0][0]] # Fixed Y (Red)
-    z1 = [i[2] for i in data[0][0][0]] # Fixed Z (Red)
+    x1 = [i[0] for i in val_data[0][0][0]] # Fixed X (Red)
+    y1 = [i[1] for i in val_data[0][0][0]] # Fixed Y (Red)
+    z1 = [i[2] for i in val_data[0][0][0]] # Fixed Z (Red)
 
-    x2 = [i[0] for i in data[0][1][0]] # Moved X (Blue)
-    y2 = [i[1] for i in data[0][1][0]] # Moved Y (Blue)
-    z2 = [i[2] for i in data[0][1][0]] # Moved Z (Blue)
+    x2 = [i[0] for i in val_data[0][1][0]] # Moved X (Blue)
+    y2 = [i[1] for i in val_data[0][1][0]] # Moved Y (Blue)
+    z2 = [i[2] for i in val_data[0][1][0]] # Moved Z (Blue)
 
-    x3 = [i[0] for i in data[0][2][0]] # Moved X (Green)
-    y3 = [i[1] for i in data[0][2][0]] # Moved Y (Green)
-    z3 = [i[2] for i in data[0][2][0]] # Moved Z (Green)
-
-    x4 = [i[0] for i in labels[0][0]]  # Ground Truth X (Yellow)
-    y4 = [i[1] for i in labels[0][0]]  # Ground Truth Y (Yellow)
-    z4 = [i[2] for i in labels[0][0]]  # Ground Truth Z (Yellow)
+    x4 = [i[0] for i in val_labels[0][0]]  # Ground Truth X (Yellow)
+    y4 = [i[1] for i in val_labels[0][0]]  # Ground Truth Y (Yellow)
+    z4 = [i[2] for i in val_labels[0][0]]  # Ground Truth Z (Yellow)
 
     ax.scatter(x1, y1, z1, c='r', marker='.')
     ax.scatter(x2, y2, z2, c='b', marker='.')
-    ax.scatter(x3, y3, z3, c='g', marker='.')
     ax.scatter(x4, y4, z4, c='y', marker='.')
 
     plt.show()
-    plt.savefig('pre_reg-scatter.png', dpi=1000)
+    plt.savefig('pre_reg-scatter.png', dpi=250)
     plt.close()
+    '''
 
-
-    fixed_len = data[0][0].shape[1]
-    moving_len = data[0][1].shape[1]
-    conditional_len = data[0][2].shape[1]
-    f = h5py.File(train_file, mode='r')
-    num_train = f['data'].shape[0]
-    f = h5py.File(test_file, mode='r')
-    num_val = f['data'].shape[0]
-
-    model = ConditionalTransformerNet(fixed_len, moving_len, conditional_len)
-    lr = 0.01
-    opt = SGD(lr=lr)
+    model = ConditionalTransformerNet(num_points, ct_activation='linear', dropout=0., verbose=False)
+    max_learning_rate = 0.05
+    #min_learning_rate = 5e-5
+    #learning_rate_decay = (max_learning_rate - min_learning_rate) / num_epochs
+    opt = SGD(lr=max_learning_rate)#, decay=learning_rate_decay)
     model.compile(optimizer=opt,
                   loss=sorted_mse_loss)
     if not os.path.exists('./results/'):
         os.mkdir('./results/')
 
-    first_val_X = data[0]
-    first_val_Y = labels[0][0]
-    Prediction_Plot = Prediction_Plotter(first_val_X, first_val_Y)
+    f = h5py.File(train_file, mode='r')
+    num_train = f['data'].shape[0]
+    f = h5py.File(test_file, mode='r')
+    num_val = f['data'].shape[0]
+
     history = model.fit_generator(train.generator(),
                                   steps_per_epoch=num_train // batch_size,
-                                  epochs=epochs,
+                                  epochs=num_epochs,
                                   validation_data=val.generator(),
                                   validation_steps=num_val // batch_size,
-                                  callbacks=[Prediction_Plot],
+                                  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val],
                                   verbose=1)
-
-    plot_history(history, './results/')
-    model.save_weights('./results/pointnet_weights.h5')
+    model.save('./results/CTN.h5')
+    name = ''
+    output = [(name, history)]
+    plot_results('loss', output, 'loss') 
 
 if __name__ == '__main__':
     main()
+
+'''
+    first_val_X_moved = tf.convert_to_tensor(first_val_X[1][0], np.float32)
+    first_val_Y = tf.convert_to_tensor(first_val_Y[0], np.float32)
+    
+    first_val_X_moved = np.array([[0, 0, 2],
+                                  [0, 1, 2],
+                                  [1, 2, 0],
+                                  [2, 0, 1]])
+    first_val_Y = np.array([[1, 0, 2],
+                            [0, 0, 1],
+                            [0, 0, 1],
+                            [0, 2, 1]])
+
+    first_val_X_moved = tf.convert_to_tensor(first_val_X_moved, np.float32)
+    first_val_Y = tf.convert_to_tensor(first_val_Y, np.float32)
+
+    sums = tf.add(tf.slice(first_val_X_moved, [0, 0], [-1, 1]) * 100, tf.add(tf.slice(first_val_X_moved, [0, 1], [-1, 1]) * 10, tf.slice(first_val_X_moved, [0, 2], [-1, 1])))
+    reordered = tf.gather(first_val_X_moved, tf.nn.top_k(sums[:, 0], k=tf.shape(first_val_X_moved)[0], sorted=False).indices)
+    first_val_X_moved = tf.reverse(reordered, axis=[0])
+
+    sums = tf.add(tf.slice(first_val_Y, [0, 0], [-1, 1]) * 100, tf.add(tf.slice(first_val_Y, [0, 1], [-1, 1]) * 10, tf.slice(first_val_Y, [0, 2], [-1, 1])))
+    reordered = tf.gather(first_val_Y, tf.nn.top_k(sums[:, 0], k=tf.shape(first_val_Y)[0], sorted=False).indices)
+    first_val_Y = tf.reverse(reordered, axis=[0])
+
+    tfd = tfp.distributions
+    std = K.std(first_val_Y)
+    likelihood1 = tfd.Normal(loc=first_val_Y, scale=std)
+    std = K.std(first_val_X_moved)
+    likelihood2 = tfd.Normal(loc=first_val_X_moved, scale=std)
+
+    print(K.eval(first_val_X_moved))
+    print()
+    print(K.eval(first_val_Y))
+    print()
+    print(K.eval(likelihood1.kl_divergence(likelihood2)))
+    print(K.eval(K.mean(likelihood1.kl_divergence(likelihood2))))
+    print(K.eval(K.mean(K.mean(likelihood1.kl_divergence(likelihood2), axis=-1))))
+'''
