@@ -11,16 +11,33 @@ from keras.utils import np_utils
 from keras.utils import Sequence
 import random
 
-def drand(min_d, max_d):
+def ypr_rand(min_deg, max_deg):
+    y = [random.uniform(min_deg, max_deg)]
+    p = [random.uniform(min_deg, max_deg)]
+    r = [random.uniform(min_deg, max_deg)]
+    return y, p, r
+
+def d_rand(min_d, max_d):
     d = [random.uniform(min_d, max_d), random.uniform(min_d, max_d), random.uniform(min_d, max_d)]
     return d
 
-def qrand():
+def q_rand():
     pn = 0
     while pn < 1e-5:
         p = [random.random(), 2 * (random.random() - 0.5), 2 * (random.random() - 0.5), 2 * (random.random() - 0.5)]
         pn = np.linalg.norm(p)
     return p / pn
+
+def e2q(yaw, pitch, roll):
+
+    yaw_rad = (np.deg2rad(yaw) / 2)
+    pitch_rad = (np.deg2rad(pitch) / 2)
+    roll_rad = (np.deg2rad(roll) / 2)
+    qo = np.cos(roll_rad / 2) * np.cos(pitch_rad / 2) * np.cos(yaw_rad / 2) + np.sin(roll_rad / 2) * np.sin(pitch_rad / 2) * np.sin(yaw_rad / 2)
+    qx = np.sin(roll_rad / 2) * np.cos(pitch_rad / 2) * np.cos(yaw_rad / 2) - np.cos(roll_rad / 2) * np.sin(pitch_rad / 2) * np.sin(yaw_rad / 2)
+    qy = np.cos(roll_rad / 2) * np.sin(pitch_rad / 2) * np.cos(yaw_rad / 2) + np.sin(roll_rad / 2) * np.cos(pitch_rad / 2) * np.sin(yaw_rad / 2)
+    qz = np.cos(roll_rad / 2) * np.cos(pitch_rad / 2) * np.sin(yaw_rad / 2) - np.sin(roll_rad / 2) * np.sin(pitch_rad / 2) * np.cos(yaw_rad / 2)
+    return np.squeeze([qo, qx, qy, qz])
 
 def qnorm(p):
     pn = np.linalg.norm(p)
@@ -125,9 +142,9 @@ class DataGenerator(Sequence):
                         if is_jitter2 == 1:
                             item2 = self.jitter_point_cloud(item2)
                         '''
-
-                    R = q2r(qnorm(qrand()))
-                    d = drand(-1, 1)
+                    y, p, r = ypr_rand(-45, 45)
+                    R = q2r(qnorm(e2q(y, p, r)))
+                    d = d_rand(-1, 1)
                     T = get_T(R, d)
                     moving_moved = []
                     for point in moving:
@@ -138,6 +155,5 @@ class DataGenerator(Sequence):
 
                     X1.append(fixed)
                     X2.append(moving_moved)
-                    X3.append(moving_moved)
                     Y.append(ground_truth)
-                yield [np.array(X1), np.array(X2), np.array(X3)], np.array(Y)
+                yield [np.array(X1), np.array(X2)], np.array(Y)
