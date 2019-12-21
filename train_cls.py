@@ -1,7 +1,7 @@
 from callbacks import Prediction_Plotter
 from data_loader import DataGenerator
 from keras.optimizers import SGD, Adam
-from losses import sorted_mse_loss, nll, sorted_nll, kl_divergence, sorted_kl_divergence
+from losses import sorted_mse_loss, chamfer_loss
 from model import ConditionalTransformerNet
 from mpl_toolkits.mplot3d import Axes3D
 import h5py
@@ -10,161 +10,158 @@ import matplotlib
 import matplotlib.pyplot as plt
 import os
 import tensorflow as tf
-import tensorflow_probability as tfp
-
+import sys
 from keras import backend as K
 import numpy as np
 
 matplotlib.use('AGG')
 
 def plot_results(attribute, output, filename):
-    plt.figure(figsize=(16,10))
-    for name, history in output:
-        val = plt.plot(history.epoch, history.history['val_' + attribute], '--', label=name.title()+' Val')
-        plt.plot(history.epoch, history.history[attribute], color=val[0].get_color(), label=name.title()+' Train')
-    plt.xlabel('Epochs')
-    plt.ylabel(attribute)
-    plt.legend()
-    plt.xlim([0, max(history.epoch)])
-    plt.savefig(filename + '.png', dpi=250)
-    plt.close()
+	plt.figure(figsize=(16,10))
+	for name, history in output:
+		val = plt.plot(history.epoch, history.history['val_' + attribute], '--', label=name.title()+' Val')
+		plt.plot(history.epoch, history.history[attribute], color=val[0].get_color(), label=name.title()+' Train')
+	plt.xlabel('Epochs')
+	plt.ylabel(attribute)
+	plt.legend()
+	plt.xlim([0, max(history.epoch)])
+	plt.yscale('log')
+	plt.savefig(filename + '.png', dpi=250)
+	plt.close()
 
 def main():
-    train_file = './ModelNet40/ply_data_train.h5'
-    test_file = './ModelNet40/ply_data_test.h5'
+	train_file = './ModelNet40/ply_data_train.h5'
+	test_file = './ModelNet40/ply_data_test.h5'
 
-    num_epochs = 10
-    batch_size = 32 * 3
+	num_epochs = 200
+	batch_size = 32 * 3
 
-    train = DataGenerator(train_file, batch_size, train=True)
-    
-    train_data = []     # store all the generated data batches
-    train_labels = []   # store all the generated ground_truth batches
-    max_iter = 1        # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
-    i = 0
-    for d, l in train.generator():
-        train_data.append(d)
-        train_labels.append(l)
-        i += 1
-        if i == max_iter:
-            break
-    fixed_len = train_data[0][0].shape[1]
-    moving_len = train_data[0][1].shape[1]
+	loss_name = str(sys.argv[1])
+	if loss_name == 'sorted_mse_loss': loss = sorted_mse_loss
+	if loss_name == 'chamfer_loss': loss = chamfer_loss
 
-    assert fixed_len == moving_len, 'Lengths not consistent'
-    num_points = fixed_len
+	train = DataGenerator(train_file, batch_size, train=True)
+	
+	train_data = []     # store all the generated data batches
+	train_labels = []   # store all the generated ground_truth batches
+	max_iter = 1        # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
+	i = 0
+	for d, l in train.generator():
+		train_data.append(d)
+		train_labels.append(l)
+		i += 1
+		if i == max_iter:
+			break
+	fixed_len = train_data[0][0].shape[1]
+	moving_len = train_data[0][1].shape[1]
 
-    first_train_X = train_data[0]
-    first_train_Y = train_labels[0]
-    Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, 'train')
+	assert fixed_len == moving_len, 'Lengths not consistent'
+	num_points = fixed_len
 
-    val = DataGenerator(test_file, batch_size, train=False)
+	first_train_X = train_data[0]
+	first_train_Y = train_labels[0]
+	Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, loss_name + '-train')
 
-    val_data = []     # store all the generated data batches
-    val_labels = []   # store all the generated ground_truth batches
-    max_iter = 1      # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
-    i = 0
-    for d, l in val.generator():
-        val_data.append(d)
-        val_labels.append(l)
-        i += 1
-        if i == max_iter:
-            break
+	val = DataGenerator(test_file, batch_size, train=False)
 
-    first_val_X = val_data[0]
-    first_val_Y = val_labels[0]
-    Prediction_Plot_Val = Prediction_Plotter(first_val_X, first_val_Y, 'val')
+	val_data = []     # store all the generated data batches
+	val_labels = []   # store all the generated ground_truth batches
+	max_iter = 1      # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
+	i = 0
+	for d, l in val.generator():
+		val_data.append(d)
+		val_labels.append(l)
+		i += 1
+		if i == max_iter:
+			break
 
-    '''
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
+	first_val_X = val_data[0]
+	first_val_Y = val_labels[0]
+	Prediction_Plot_Val = Prediction_Plotter(first_val_X, first_val_Y, loss_name + '-val')
 
-    x1 = [i[0] for i in val_data[0][0][0]] # Fixed X (Red)
-    y1 = [i[1] for i in val_data[0][0][0]] # Fixed Y (Red)
-    z1 = [i[2] for i in val_data[0][0][0]] # Fixed Z (Red)
+	'''
+	fig = plt.figure()
+	ax = fig.add_subplot(111, projection='3d')
 
-    x2 = [i[0] for i in val_data[0][1][0]] # Moved X (Blue)
-    y2 = [i[1] for i in val_data[0][1][0]] # Moved Y (Blue)
-    z2 = [i[2] for i in val_data[0][1][0]] # Moved Z (Blue)
+	x1 = [i[0] for i in val_data[0][0][0]] # Fixed X (Red)
+	y1 = [i[1] for i in val_data[0][0][0]] # Fixed Y (Red)
+	z1 = [i[2] for i in val_data[0][0][0]] # Fixed Z (Red)
 
-    x4 = [i[0] for i in val_labels[0][0]]  # Ground Truth X (Yellow)
-    y4 = [i[1] for i in val_labels[0][0]]  # Ground Truth Y (Yellow)
-    z4 = [i[2] for i in val_labels[0][0]]  # Ground Truth Z (Yellow)
+	x2 = [i[0] for i in val_data[0][1][0]] # Moved X (Blue)
+	y2 = [i[1] for i in val_data[0][1][0]] # Moved Y (Blue)
+	z2 = [i[2] for i in val_data[0][1][0]] # Moved Z (Blue)
 
-    ax.scatter(x1, y1, z1, c='r', marker='.')
-    ax.scatter(x2, y2, z2, c='b', marker='.')
-    ax.scatter(x4, y4, z4, c='y', marker='.')
+	x4 = [i[0] for i in val_labels[0][0]]  # Ground Truth X (Yellow)
+	y4 = [i[1] for i in val_labels[0][0]]  # Ground Truth Y (Yellow)
+	z4 = [i[2] for i in val_labels[0][0]]  # Ground Truth Z (Yellow)
 
-    plt.show()
-    plt.savefig('pre_reg-scatter.png', dpi=250)
-    plt.close()
-    '''
+	ax.scatter(x1, y1, z1, c='r', marker='.')
+	ax.scatter(x2, y2, z2, c='b', marker='.')
+	ax.scatter(x4, y4, z4, c='y', marker='.')
 
-    model = ConditionalTransformerNet(num_points, ct_activation='linear', dropout=0., verbose=False)
-    max_learning_rate = 0.05
-    #min_learning_rate = 5e-5
-    #learning_rate_decay = (max_learning_rate - min_learning_rate) / num_epochs
-    opt = SGD(lr=max_learning_rate)#, decay=learning_rate_decay)
-    model.compile(optimizer=opt,
-                  loss=sorted_mse_loss)
-    if not os.path.exists('./results/'):
-        os.mkdir('./results/')
+	plt.show()
+	plt.savefig('pre_reg-scatter.png', dpi=250)
+	plt.close()
+	'''
 
-    f = h5py.File(train_file, mode='r')
-    num_train = f['data'].shape[0]
-    f = h5py.File(test_file, mode='r')
-    num_val = f['data'].shape[0]
+	model = ConditionalTransformerNet(num_points, ct_activation='linear', dropout=0., verbose=False)
+	max_learning_rate = 0.05
+	#min_learning_rate = 5e-5
+	#learning_rate_decay = (max_learning_rate - min_learning_rate) / num_epochs
+	opt = SGD(lr=max_learning_rate)#, decay=learning_rate_decay)
+	model.compile(optimizer=opt,
+				  loss=loss)
 
-    history = model.fit_generator(train.generator(),
-                                  steps_per_epoch=num_train // batch_size,
-                                  epochs=num_epochs,
-                                  validation_data=val.generator(),
-                                  validation_steps=num_val // batch_size,
-                                  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val],
-                                  verbose=1)
-    model.save('./results/CTN.h5')
-    name = ''
-    output = [(name, history)]
-    plot_results('loss', output, 'loss') 
+	if not os.path.exists('./results/'):
+		os.mkdir('./results/')
+
+	f = h5py.File(train_file, mode='r')
+	num_train = f['data'].shape[0]
+	f = h5py.File(test_file, mode='r')
+	num_val = f['data'].shape[0]
+
+	history = model.fit_generator(train.generator(),
+								  steps_per_epoch=num_train // batch_size,
+								  epochs=num_epochs,
+								  validation_data=val.generator(),
+								  validation_steps=num_val // batch_size,
+								  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val],
+								  verbose=2)
+	model.save('./results/CTN-' + loss_name + '.h5')
+	name = ''
+	output = [(name, history)]
+	plot_results('loss', output, loss_name + '-loss') 
 
 if __name__ == '__main__':
-    main()
 
-'''
-    first_val_X_moved = tf.convert_to_tensor(first_val_X[1][0], np.float32)
-    first_val_Y = tf.convert_to_tensor(first_val_Y[0], np.float32)
-    
-    first_val_X_moved = np.array([[0, 0, 2],
-                                  [0, 1, 2],
-                                  [1, 2, 0],
-                                  [2, 0, 1]])
-    first_val_Y = np.array([[1, 0, 2],
-                            [0, 0, 1],
-                            [0, 0, 1],
-                            [0, 2, 1]])
+	'''
+	import tensorflow_probability as tfp
+	tfd = tfp.distributions
 
-    first_val_X_moved = tf.convert_to_tensor(first_val_X_moved, np.float32)
-    first_val_Y = tf.convert_to_tensor(first_val_Y, np.float32)
+	y_true = tf.random.normal([5, 15, 3], 1.0, 1.5)
+	y_pred = tf.random.normal([5, 15, 3], 1.0, 1.0)
 
-    sums = tf.add(tf.slice(first_val_X_moved, [0, 0], [-1, 1]) * 100, tf.add(tf.slice(first_val_X_moved, [0, 1], [-1, 1]) * 10, tf.slice(first_val_X_moved, [0, 2], [-1, 1])))
-    reordered = tf.gather(first_val_X_moved, tf.nn.top_k(sums[:, 0], k=tf.shape(first_val_X_moved)[0], sorted=False).indices)
-    first_val_X_moved = tf.reverse(reordered, axis=[0])
+	print(tfd.Normal(loc=y_true, scale=K.std(y_true)))
 
-    sums = tf.add(tf.slice(first_val_Y, [0, 0], [-1, 1]) * 100, tf.add(tf.slice(first_val_Y, [0, 1], [-1, 1]) * 10, tf.slice(first_val_Y, [0, 2], [-1, 1])))
-    reordered = tf.gather(first_val_Y, tf.nn.top_k(sums[:, 0], k=tf.shape(first_val_Y)[0], sorted=False).indices)
-    first_val_Y = tf.reverse(reordered, axis=[0])
+	def gmm_nll(y_true, y_pred):
 
-    tfd = tfp.distributions
-    std = K.std(first_val_Y)
-    likelihood1 = tfd.Normal(loc=first_val_Y, scale=std)
-    std = K.std(first_val_X_moved)
-    likelihood2 = tfd.Normal(loc=first_val_X_moved, scale=std)
+		def get_components_list(x):
+			arr = []
+			for i in range(tf.int_shape(x)[0]):
+				arr.append(tfd.Normal(loc=x, scale=K.std(x)))
+			return arr
 
-    print(K.eval(first_val_X_moved))
-    print()
-    print(K.eval(first_val_Y))
-    print()
-    print(K.eval(likelihood1.kl_divergence(likelihood2)))
-    print(K.eval(K.mean(likelihood1.kl_divergence(likelihood2))))
-    print(K.eval(K.mean(K.mean(likelihood1.kl_divergence(likelihood2), axis=-1))))
-'''
+		probs = tf.fill([tf.shape(y_true)[1]], 1 / tf.shape(y_true)[1])
+
+		components = tf.py_func(get_components_list, y_true, tfp.distributions.Normal)
+
+		mix_gauss = tfd.Mixture(
+			cat=tfd.Categorical(probs=probs),
+			components=components)
+
+		return mix_gauss.log_prob(y_pred)
+
+	batched_losses = tf.map_fn(lambda x: gmm_nll(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
+	print(K.eval(batched_losses))
+	'''
+	main()
