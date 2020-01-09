@@ -1,5 +1,5 @@
 from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNormalization, Dense, GlobalMaxPooling1D, LeakyReLU
-from keras.layers import Reshape, Lambda, concatenate, multiply
+from keras.layers import Reshape, Lambda, concatenate, multiply, add
 from keras.models import Model
 from keras.engine.topology import Layer
 from keras.utils import multi_gpu_model, plot_model
@@ -108,43 +108,35 @@ def ConditionalTransformerNet(num_points, ct_activation='linear', dropout=0., mu
 	combined_inputs = concatenate([fixed_pointNet, moving_pointNet])
 
 	x = Dense(1024, activation=ct_activation)(combined_inputs)
-	x = Dropout(dropout)(x)
+	#x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
 	x = Dense(1024, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)
-	x = Dense(512, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
-	x = Dense(512, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)
-	x = Dense(256, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
-	x = Dense(256, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
-	x = Dense(128, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
+	#x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
+	x = Dense(1024, activation=ct_activation)(x)
+	#x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
 	x = Dense(num_points * 3, activation=ct_activation)(x)
 	x = Reshape((-1, 3))(x)
 
 	combined_inputs = concatenate([x, moving])
 	x = Dense(1024, activation=ct_activation)(combined_inputs)
-	x = Dropout(dropout)(x)
+	#x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
 	x = Dense(1024, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)
-	x = Dense(512, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
-	x = Dense(512, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)
-	x = Dense(256, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
-	x = Dense(256, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
-	x = Dense(128, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)	
+	#x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
+	x = Dense(1024, activation=ct_activation)(x)
+	#x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
 	x = Dense(3)(x)
+
+	x = add([x, moving])
 
 	model = Model(inputs=[fixed, moving], outputs=x)
 
 	if verbose: model.summary()
-	plot_model(model, to_file='model.png')
+	plot_model(model, to_file='model.png', show_shapes=True, expand_nested=True)
 
 	if multi_gpu:
 		try:
