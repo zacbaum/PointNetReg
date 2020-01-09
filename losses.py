@@ -11,56 +11,6 @@ def sorted_mse_loss(y_true, y_pred):
 	return K.mean(K.square(y_true_sorted - y_pred_sorted), axis=-1)
 
 
-def sorted_mse_loss2(y_true, y_pred):
-
-	def sorted_mse(y_true, y_pred):
-
-		def euclidean_sort(T, P):
-			newP = np.array([])
-			for i in range(len(T)):
-				current_closest = [float('Inf'), float('Inf'), float('Inf')]
-				closest_index = -1
-				for j in range(len(P)):
-					if np.linalg.norm(P[j] - T[i]) < np.linalg.norm(current_closest - T[i]):
-						current_closest = P[j]
-						closest_index = j
-				newP = np.vstack([newP, current_closest]) if newP.size else current_closest
-				P = np.delete(P, closest_index, axis=0)
-			return newP
-
-		y_pred = tf.py_func(euclidean_sort, [y_true, y_pred], tf.float32)
-		return K.mean(K.square(y_true - y_pred))
-
-	batched_losses = tf.map_fn(lambda x: sorted_mse(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
-	return K.mean(tf.stack(batched_losses))
-
-
-def nll(y_true, y_pred):
-	std = K.std(y_pred)
-	likelihood = tfd.Normal(loc=y_pred, scale=std)
-	return - K.mean(likelihood.log_prob(y_true), axis=-1)
-
-
-def kl_divergence(y_true, y_pred):
-	std = K.std(y_true)
-	likelihood1 = tfd.Normal(loc=y_true, scale=std)
-	std = K.std(y_pred)
-	likelihood2 = tfd.Normal(loc=y_pred, scale=std)
-	return K.mean(likelihood1.kl_divergence(likelihood2))
-
-
-def sorted_kl_divergence(y_true, y_pred):
-	y_true_sorted = tf.sort(y_true, axis=1, direction='ASCENDING')
-	y_pred_sorted = tf.sort(y_pred, axis=1, direction='ASCENDING')
-	std = K.std(y_true_sorted)
-	likelihood1 = tfd.Normal(loc=y_true_sorted, scale=std)
-	std = K.std(y_pred_sorted)
-	likelihood2 = tfd.Normal(loc=y_pred_sorted, scale=std)
-	l1 = K.mean(likelihood1.kl_divergence(likelihood2))
-	l2 = K.mean(likelihood2.kl_divergence(likelihood1))
-	return K.mean(tf.stack([l1, l2]))
-
-
 def chamfer_distance(y_true, y_pred):
 	row_norms_true = tf.reduce_sum(tf.square(y_true), axis=1)
 	row_norms_true = tf.reshape(row_norms_true, [-1, 1])
@@ -75,3 +25,24 @@ def chamfer_distance(y_true, y_pred):
 def chamfer_loss(y_true, y_pred):
 	batched_losses = tf.map_fn(lambda x: chamfer_distance(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
 	return K.mean(tf.stack(batched_losses))
+
+
+def gmm_nll_loss(y_true, y_pred):
+
+	def gmm_nll(y_true, y_pred):
+		
+		mix_parameter = tf.fill([K.int_shape(y_pred)[0]], 1 / K.int_shape(y_pred)[0])
+		covariance_matrix = np.diag([0.01, 0.01, 0.01])
+		covariance_matrix = tf.constant(covariance_matrix, dtype=tf.float32)
+
+		mix_gauss_pred = tfd.MixtureSameFamily(
+			mixture_distribution=tfd.Categorical(
+				probs=mix_parameter),
+			components_distribution=tfd.MultivariateNormalFullCovariance(
+				loc=y_pred,
+				covariance_matrix=covariance_matrix))
+
+		return - K.mean(mix_gauss_pred.log_prob(y_true))
+
+	batched_losses = tf.map_fn(lambda x: gmm_nll(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
+	return K.mean(batched_losses)
