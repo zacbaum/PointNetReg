@@ -16,10 +16,10 @@ def chamfer_distance(y_true, y_pred):
 	row_norms_true = tf.reshape(row_norms_true, [-1, 1])
 	row_norms_pred = tf.reduce_sum(tf.square(y_pred), axis=1)
 	row_norms_pred = tf.reshape(row_norms_pred, [1, -1])
-	D = tf.sqrt(tf.maximum(row_norms_true - 2 * tf.matmul(y_true, y_pred, False, True) + row_norms_pred, 0.0))
-	dist_t_to_p = K.mean(K.min(D, axis=0)) #shape: (1,)
-	dist_p_to_t = K.mean(K.min(D, axis=1)) #shape: (1,)
-	dist = K.max([dist_p_to_t, dist_t_to_p]) #shape: (1,)
+	D = row_norms_true - 2 * tf.matmul(y_true, y_pred, False, True) + row_norms_pred
+	dist_t_to_p = K.mean(K.min(D, axis=0))
+	dist_p_to_t = K.mean(K.min(D, axis=1))
+	dist = K.mean(tf.stack([dist_p_to_t, dist_t_to_p]))
 	return dist
 
 def chamfer_loss(y_true, y_pred):
@@ -32,7 +32,7 @@ def gmm_nll_loss(y_true, y_pred):
 	def gmm_nll(y_true, y_pred):
 		
 		mix_parameter = tf.fill([K.int_shape(y_pred)[0]], 1 / K.int_shape(y_pred)[0])
-		covariance_matrix = np.diag([0.01, 0.01, 0.01])
+		covariance_matrix = np.diag([5e-6, 5e-6, 5e-6])
 		covariance_matrix = tf.constant(covariance_matrix, dtype=tf.float32)
 
 		mix_gauss_pred = tfd.MixtureSameFamily(
