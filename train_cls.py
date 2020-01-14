@@ -1,4 +1,4 @@
-from callbacks import Prediction_Plotter
+from callbacks import Prediction_Plotter, PlotLosses
 from data_loader import DataGenerator
 from keras.optimizers import SGD, Adam
 from losses import sorted_mse_loss, chamfer_loss, gmm_nll_loss
@@ -8,12 +8,12 @@ import h5py
 import keras
 import matplotlib
 import matplotlib.pyplot as plt
+import sys
 import os
-#os.environ["CUDA_VISIBLE_DEVICES"]="1,2"
+os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[2]
 import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
-import sys
 from keras import backend as K
 import numpy as np
 
@@ -36,17 +36,15 @@ def main():
 	train_file = './ModelNet40/ply_data_train.h5'
 	test_file = './ModelNet40/ply_data_test.h5'
 
-	num_epochs = 50
-	batch_size = 16 * 3
+	num_epochs = 500
+	batch_size = 3 * 64
 
 	loss_name = str(sys.argv[1])
 	if loss_name == 'sorted_mse_loss': loss = sorted_mse_loss
 	if loss_name == 'chamfer_loss': loss = chamfer_loss
 	if loss_name == 'gmm_nll_loss': loss = gmm_nll_loss
-	if loss_name == 'gmm_pdf_loss': loss = gmm_pdf_loss
-	if loss_name == 'gmm_kl_loss': loss = gmm_kl_loss
 
-	train = DataGenerator(train_file, batch_size, train=True)
+	train = DataGenerator(train_file, batch_size)
 	
 	train_data = []     # store all the generated data batches
 	train_labels = []   # store all the generated ground_truth batches
@@ -68,7 +66,7 @@ def main():
 	first_train_Y = train_labels[0]
 	Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, loss_name + '-train', debug=True)
 
-	val = DataGenerator(test_file, batch_size, train=False)
+	val = DataGenerator(test_file, batch_size)
 
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches
@@ -85,24 +83,26 @@ def main():
 	first_val_Y = val_labels[0]
 	Prediction_Plot_Val = Prediction_Plotter(first_val_X, first_val_Y, loss_name + '-val', debug=True)
 
-	'''	
+	LossPlotter = PlotLosses()
+
+	'''
 	fig = plt.figure()
 	ax = fig.add_subplot(111, projection='3d')
 
-	#x1 = [i[0] for i in val_data[0][0][0]] # Fixed X (Red)
-	#y1 = [i[1] for i in val_data[0][0][0]] # Fixed Y (Red)
-	#z1 = [i[2] for i in val_data[0][0][0]] # Fixed Z (Red)
+	x1 = [i[0] for i in val_data[0][0][0]] # Fixed X (Red)
+	y1 = [i[1] for i in val_data[0][0][0]] # Fixed Y (Red)
+	z1 = [i[2] for i in val_data[0][0][0]] # Fixed Z (Red)
 
-	#x2 = [i[0] for i in val_data[0][1][0]] # Moved X (Blue)
-	#y2 = [i[1] for i in val_data[0][1][0]] # Moved Y (Blue)
-	#z2 = [i[2] for i in val_data[0][1][0]] # Moved Z (Blue)
+	x2 = [i[0] for i in val_data[0][1][0]] # Moved X (Blue)
+	y2 = [i[1] for i in val_data[0][1][0]] # Moved Y (Blue)
+	z2 = [i[2] for i in val_data[0][1][0]] # Moved Z (Blue)
 
 	x4 = [i[0] for i in val_labels[0][0]]  # Ground Truth X (Yellow)
 	y4 = [i[1] for i in val_labels[0][0]]  # Ground Truth Y (Yellow)
 	z4 = [i[2] for i in val_labels[0][0]]  # Ground Truth Z (Yellow)
 
-	#ax.scatter(x1, y1, z1, c='r', marker='.')
-	#ax.scatter(x2, y2, z2, c='b', marker='.')
+	ax.scatter(x1, y1, z1, c='r', marker='.')
+	ax.scatter(x2, y2, z2, c='b', marker='.')
 	ax.scatter(x4, y4, z4, c='y', marker='.')
 	
 	ax.set_xlim([-1, 1])
@@ -116,8 +116,7 @@ def main():
 	y_true = tf.convert_to_tensor(first_val_Y[0], np.float32)
 	probs_true = tf.fill([K.int_shape(y_true)[0]], 1 / K.int_shape(y_true)[0])
 	covariance_matrix = tfp.stats.covariance(y_true)
-	covariance_matrix = np.diag([0.0001, 0.0001, 0.0001])
-	print(covariance_matrix)
+	covariance_matrix = np.diag([0.00001, 0.00001, 0.00001])
 	covariance_matrix = tf.constant(covariance_matrix, dtype=tf.float32)
 
 	mix_gauss_true = tfd.MixtureSameFamily(
@@ -127,13 +126,9 @@ def main():
 			loc=y_true,
 			covariance_matrix=covariance_matrix))
 
-	print(K.eval(mix_gauss_true.covariance()))
-	print(np.linalg.det(K.eval(mix_gauss_true.covariance())))
-	print(np.linalg.inv(K.eval(mix_gauss_true.covariance())))
-	
-	x = np.linspace(-1, 1, 50, dtype=np.float32)
-	y = np.linspace(-1, 1, 50, dtype=np.float32)
-	z = np.linspace(-1, 1, 50, dtype=np.float32)
+	x = np.linspace(-1, 1, 75, dtype=np.float32)
+	y = np.linspace(-1, 1, 75, dtype=np.float32)
+	z = np.linspace(-1, 1, 75, dtype=np.float32)
 
 	A = np.vstack(np.meshgrid(x,y,z)).reshape(3,-1).T
 	x1 = [i for i in A.T[0]]
@@ -142,7 +137,7 @@ def main():
 
 	cval = K.eval(mix_gauss_true.prob(A))
 	for i in range(len(cval)-1, -1, -1):
-		if cval[i] <= 1e-2:
+		if cval[i] <= 1e-5:
 			cval = np.delete(cval, i, 0)
 			x1.pop(i)
 			y1.pop(i)
@@ -150,7 +145,7 @@ def main():
 
 	fig = plt.figure()
 	ax = fig.add_subplot(111, projection='3d')
-	ax.scatter(x1, y1, z1, c=cval, alpha=0.75, marker='.', cmap='Greys')
+	ax.scatter(x1, y1, z1, c=cval, marker='.', cmap='plasma')
 	ax.set_xlim([-1, 1])
 	ax.set_ylim([-1, 1])
 	ax.set_zlim([-1, 1])
@@ -161,7 +156,7 @@ def main():
 	return
 	'''
 	
-	model = ConditionalTransformerNet(num_points, ct_activation='relu', dropout=0.0, verbose=False)
+	model = ConditionalTransformerNet(num_points)
 	learning_rate = 0.05
 	opt = Adam(lr=learning_rate)
 	model.compile(optimizer=opt,
@@ -180,8 +175,8 @@ def main():
 								  epochs=num_epochs,
 								  validation_data=val.generator(),
 								  validation_steps=num_val // batch_size,
-								  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val],
-								  verbose=2)
+								  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val, LossPlotter],
+								  verbose=1)
 	model.save('./results/CTN-' + loss_name + '.h5')
 	name = ''
 	output = [(name, history)]
