@@ -1,4 +1,4 @@
-from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNormalization, Dense, GlobalMaxPooling1D, LeakyReLU
+from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNormalization, Dense, GlobalMaxPooling1D
 from keras.layers import Reshape, Lambda, concatenate, multiply, add
 from keras.models import Model
 from keras.engine.topology import Layer
@@ -6,8 +6,7 @@ from keras.utils import multi_gpu_model, plot_model
 from keras import backend as K
 import numpy as np
 import tensorflow as tf
-
-lrelu = lambda x: LeakyReLU(alpha=0.1)(x)
+import keras
 
 class MatMul(Layer):
 
@@ -37,6 +36,10 @@ class MatMul(Layer):
 	def compute_output_shape(self, input_shape):
 		output_shape = [input_shape[0][0], input_shape[0][1], input_shape[1][-1]]
 		return tuple(output_shape)
+
+
+def exp_dim(global_feature, num_points):
+    return tf.tile(global_feature, [1, num_points, 1])
 
 
 def PointNet_features(input_len=None):
@@ -82,6 +85,7 @@ def PointNet_features(input_len=None):
 
 	# forward net
 	g = MatMul()([g, feature_T])
+	local_feature = g
 	g = Conv1D(64, 1, activation='relu')(g)
 	g = BatchNormalization()(g)
 	g = Conv1D(128, 1, activation='relu')(g)
@@ -91,11 +95,14 @@ def PointNet_features(input_len=None):
 
 	# global feature
 	global_feature = MaxPooling1D(pool_size=input_len)(g)
-	model = Model(inputs=input_points, outputs=global_feature)
+	global_feature = Lambda(exp_dim, arguments={'num_points': input_len})(global_feature)
+
+	c = concatenate([local_feature, global_feature])
+	model = Model(inputs=input_points, outputs=c)
 
 	return model
 
-def ConditionalTransformerNet(num_points, ct_activation='linear', dropout=0., multi_gpu=True, verbose=False):
+def ConditionalTransformerNet(num_points, ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
 	pointNet = PointNet_features(num_points)
 
@@ -108,26 +115,20 @@ def ConditionalTransformerNet(num_points, ct_activation='linear', dropout=0., mu
 	combined_inputs = concatenate([fixed_pointNet, moving_pointNet])
 
 	x = Dense(1024, activation=ct_activation)(combined_inputs)
-	#x = Dropout(dropout)(x)
+	x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
-	x = Dense(1024, activation=ct_activation)(x)
-	#x = Dropout(dropout)(x)
+	x = Dense(512, activation=ct_activation)(x)
+	x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
-	x = Dense(1024, activation=ct_activation)(x)
-	#x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
-	x = Dense(num_points * 3, activation=ct_activation)(x)
+	x = Dense(3, activation=ct_activation)(x)
 	x = Reshape((-1, 3))(x)
 
 	combined_inputs = concatenate([x, moving])
-	x = Dense(1024, activation=ct_activation)(combined_inputs)
-	#x = Dropout(dropout)(x)
+	x = Dense(64, activation=ct_activation)(combined_inputs)
+	x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
-	x = Dense(1024, activation=ct_activation)(x)
-	#x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
-	x = Dense(1024, activation=ct_activation)(x)
-	#x = Dropout(dropout)(x)
+	x = Dense(32, activation=ct_activation)(x)
+	x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
 	x = Dense(3)(x)
 
