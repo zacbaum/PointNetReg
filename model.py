@@ -42,6 +42,11 @@ def exp_dim(global_feature, num_points):
     return tf.tile(global_feature, [1, num_points, 1])
 
 
+def mean_subtract(input_tensor):
+	mean_subtracted_tensor =  tf.map_fn(lambda points: points - tf.reduce_mean(points, axis=0), input_tensor)
+	return mean_subtracted_tensor
+
+
 def PointNet_features(input_len=None):
 	input_points = Input(shape=(input_len, 3))
 	# input transformation net
@@ -85,7 +90,7 @@ def PointNet_features(input_len=None):
 
 	# forward net
 	g = MatMul()([g, feature_T])
-	local_feature = g
+	#local_feature = g
 	g = Conv1D(64, 1, activation='relu')(g)
 	g = BatchNormalization()(g)
 	g = Conv1D(128, 1, activation='relu')(g)
@@ -95,10 +100,11 @@ def PointNet_features(input_len=None):
 
 	# global feature
 	global_feature = MaxPooling1D(pool_size=input_len)(g)
-	global_feature = Lambda(exp_dim, arguments={'num_points': input_len})(global_feature)
+	#global_feature = Lambda(exp_dim, arguments={'num_points': input_len})(global_feature)
 
-	c = concatenate([local_feature, global_feature])
-	model = Model(inputs=input_points, outputs=c)
+	#c = concatenate([local_feature, global_feature])
+	#model = Model(inputs=input_points, outputs=c)
+	model = Model(inputs=input_points, outputs=global_feature)
 
 	return model
 
@@ -108,9 +114,10 @@ def ConditionalTransformerNet(num_points, ct_activation='relu', dropout=0., mult
 
 	fixed = Input(shape=(num_points, 3))
 	moving = Input(shape=(num_points, 3))
+	moving_mean_subtracted = Lambda(mean_subtract)(moving)
 
 	fixed_pointNet = pointNet(fixed)
-	moving_pointNet = pointNet(moving)
+	moving_pointNet = pointNet(moving_mean_subtracted)
 
 	combined_inputs = concatenate([fixed_pointNet, moving_pointNet])
 
@@ -120,10 +127,10 @@ def ConditionalTransformerNet(num_points, ct_activation='relu', dropout=0., mult
 	x = Dense(512, activation=ct_activation)(x)
 	x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
-	x = Dense(3, activation=ct_activation)(x)
+	x = Dense(3 * num_points, activation=ct_activation)(x)
 	x = Reshape((-1, 3))(x)
 
-	combined_inputs = concatenate([x, moving])
+	combined_inputs = concatenate([x, moving_mean_subtracted])
 	x = Dense(64, activation=ct_activation)(combined_inputs)
 	x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
@@ -132,7 +139,7 @@ def ConditionalTransformerNet(num_points, ct_activation='relu', dropout=0., mult
 	x = BatchNormalization()(x)
 	x = Dense(3)(x)
 
-	x = add([x, moving])
+	x = add([x, moving_mean_subtracted])
 
 	model = Model(inputs=[fixed, moving], outputs=x)
 
