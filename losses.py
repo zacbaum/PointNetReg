@@ -32,7 +32,7 @@ def gmm_nll_loss(y_true, y_pred):
 	def gmm_nll(y_true, y_pred):
 		
 		mix_parameter = tf.fill([K.int_shape(y_pred)[0]], 1 / K.int_shape(y_pred)[0])
-		covariance_matrix = np.diag([5e-6, 5e-6, 5e-6])
+		covariance_matrix = np.diag([1e-4, 1e-4, 1e-4])
 		covariance_matrix = tf.constant(covariance_matrix, dtype=tf.float32)
 
 		mix_gauss_pred = tfd.MixtureSameFamily(

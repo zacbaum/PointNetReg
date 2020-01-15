@@ -116,32 +116,23 @@ class DataGenerator(Sequence):
                 batch_index = index[batch_start: batch_end]
                 X1 = []
                 X2 = []
-                X3 = []
                 Y = []
                 for j in batch_index:
-                    moving = f['data'][j]
-                    moving = moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
+                    #temp = f['data'][j]
+                    #temp = temp[np.random.randint(temp.shape[0], size=int(temp.shape[0] * 0.8)), :]
+
                     fixed = f['data'][j]
+                    #fixed = temp
                     fixed = fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.8)), :]
-                    ground_truth = f['data'][j]
-                    ground_truth = ground_truth[np.random.randint(ground_truth.shape[0], size=int(ground_truth.shape[0] * 0.8)), :]
-                    if self.train:
-
-                        '''
-                        is_rotate1 = random.randint(0, 1)
-                        is_jitter1 = random.randint(0, 1)
-                        if is_rotate1 == 1:
-                            item1 = self.rotate_point_cloud(item1)
-                        if is_jitter1 == 1:
-                            item1 = self.jitter_point_cloud(item1)
-
-                        is_rotate2 = random.randint(0, 1)
-                        is_jitter2 = random.randint(0, 1)
-                        if is_rotate2 == 1:
-                            item2 = self.rotate_point_cloud(item2)
-                        if is_jitter2 == 1:
-                            item2 = self.jitter_point_cloud(item2)
-                        '''
+                    
+                    moving = f['data'][j]
+                    #moving = temp
+                    moving = moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
+                    
+                    #ground_truth = f['data'][j]
+                    #ground_truth = temp
+                    #ground_truth = ground_truth[np.random.randint(ground_truth.shape[0], size=int(ground_truth.shape[0] * 0.8)), :]
+                    
                     y, p, r = ypr_rand(-45, 45)
                     R = q2r(qnorm(e2q(y, p, r)))
                     d = d_rand(-1, 1)
@@ -155,5 +146,5 @@ class DataGenerator(Sequence):
 
                     X1.append(fixed)
                     X2.append(moving_moved)
-                    Y.append(ground_truth)
+                    Y.append(fixed)
                 yield [np.array(X1), np.array(X2)], np.array(Y)
