@@ -36,7 +36,7 @@ def main():
 	train_file = './ModelNet40/ply_data_train.h5'
 	test_file = './ModelNet40/ply_data_test.h5'
 
-	num_epochs = 500
+	num_epochs = 1000
 	batch_size = 3 * 64
 
 	loss_name = str(sys.argv[1])
@@ -157,7 +157,7 @@ def main():
 	'''
 	
 	model = ConditionalTransformerNet(num_points)
-	learning_rate = 0.05
+	learning_rate = 0.01
 	opt = Adam(lr=learning_rate)
 	model.compile(optimizer=opt,
 				  loss=loss)
@@ -176,7 +176,7 @@ def main():
 								  validation_data=val.generator(),
 								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val, LossPlotter],
-								  verbose=1)
+								  verbose=2)
 	model.save('./results/CTN-' + loss_name + '.h5')
 	name = ''
 	output = [(name, history)]
