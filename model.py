@@ -38,10 +38,6 @@ class MatMul(Layer):
 		return tuple(output_shape)
 
 
-def exp_dim(global_feature, num_points):
-    return tf.tile(global_feature, [1, num_points, 1])
-
-
 def mean_subtract(input_tensor):
 	mean_subtracted_tensor =  tf.map_fn(lambda points: points - tf.reduce_mean(points, axis=0), input_tensor)
 	return mean_subtracted_tensor
@@ -90,7 +86,6 @@ def PointNet_features(input_len=None):
 
 	# forward net
 	g = MatMul()([g, feature_T])
-	#local_feature = g
 	g = Conv1D(64, 1, activation='relu')(g)
 	g = BatchNormalization()(g)
 	g = Conv1D(128, 1, activation='relu')(g)
@@ -100,10 +95,7 @@ def PointNet_features(input_len=None):
 
 	# global feature
 	global_feature = MaxPooling1D(pool_size=input_len)(g)
-	#global_feature = Lambda(exp_dim, arguments={'num_points': input_len})(global_feature)
 
-	#c = concatenate([local_feature, global_feature])
-	#model = Model(inputs=input_points, outputs=c)
 	model = Model(inputs=input_points, outputs=global_feature)
 
 	return model
