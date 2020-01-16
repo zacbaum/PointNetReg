@@ -27,12 +27,11 @@ do
 done
 
 # Run our python code.
-nohup python -u train_cls.py 'sorted_mse_loss' 2>err.txt
-nohup python -u train_cls.py 'chamfer_loss' 2>err.txt
-#nohup python -u train_cls.py 'kl_divergence' 2>err.txt
-#nohup python -u train_cls.py 'sorted_kl_divergence' 2>err.txt
-#nohup python -u train_cls.py 'nll' 2>err.txt
-#nohup python -u train_cls.py 'sorted_nll' 2>err.txt
+nohup python -u train_cls.py 'gmm_nll_loss' 2 >outGMM.txt 2>errGMM.txt &
+sleep 5
+nohup python -u train_cls.py 'chamfer_loss' 1 >outCHAMFER.txt 2>errCHAMFER.txt &
+sleep 5
+nohup python -u train_cls.py 'sorted_mse_loss' 0 >outMSE.txt 2>errMSE.txt &
 
 wait
 
