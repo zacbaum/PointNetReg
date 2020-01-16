@@ -19,7 +19,7 @@ class Prediction_Plotter(keras.callbacks.Callback):
         pred = self.model.predict(self.X)
 
         assert(self.Y.shape[0] == pred.shape[0])
-        for batch_id in range(0, pred.shape[0], int(pred.shape[0] / 3)):
+        for batch_id in range(0, pred.shape[0], int(pred.shape[0] / 5)):
             
             plt.clf()
             fig = plt.figure()
@@ -110,6 +110,7 @@ class PlotLosses(keras.callbacks.Callback):
         ax1.legend()
         
         plt.show()
-        plt.yscale('log')
         plt.savefig('live_metrics.png', dpi=250)
+        plt.yscale('log')
+        plt.savefig('live_metrics-log.png', dpi=250)
         plt.close()
