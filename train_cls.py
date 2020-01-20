@@ -44,7 +44,7 @@ def main():
 	if loss_name == 'chamfer_loss': loss = chamfer_loss
 	if loss_name == 'gmm_nll_loss': loss = gmm_nll_loss
 
-	train = DataGenerator(train_file, batch_size)
+	train = DataGenerator(train_file, batch_size, deform=True)
 	
 	train_data = []     # store all the generated data batches
 	train_labels = []   # store all the generated ground_truth batches
@@ -64,9 +64,9 @@ def main():
 
 	first_train_X = train_data[0]
 	first_train_Y = train_labels[0]
-	Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, loss_name + '-train')
+	Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, loss_name + '-train', debug=True)
 
-	val = DataGenerator(test_file, batch_size)
+	val = DataGenerator(test_file, batch_size, deform=True)
 
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches

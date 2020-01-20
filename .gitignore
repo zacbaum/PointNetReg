@@ -127,3 +127,4 @@ dmypy.json
 *.txt
 *.h5
 *.txt
+*.out

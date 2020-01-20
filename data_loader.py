@@ -64,11 +64,35 @@ def get_T(R, d):
     T[3, :] = [0, 0, 0, 1]
     return T
 
+def compute_RBF(x, y, sigma):
+
+    n, d = x.shape
+    m, d = y.shape
+
+    K = np.zeros([n, m])
+
+    for i in range(d):
+        K += np.square((x[:, [i]] * np.ones([1, m]) - np.ones([n, 1]) * y[:, i].T))
+
+    K = np.exp(np.divide(K, (-2 * (sigma ** 2))))
+
+    return K
+
+def compute_TPS(y):
+
+    sigma = np.random.normal()
+    c = np.random.uniform(low=-1, high=1, size=(100, 3))
+    x = np.random.uniform(low=-1, high=1, size=(100, 3))
+
+    k = compute_RBF(x, y, sigma)
+
+    return np.matmul(k.T, c) + y
+
 class DataGenerator(Sequence):
-    def __init__(self, file_name, batch_size, train=True):
+    def __init__(self, file_name, batch_size, deform=False):
         self.fie_name = file_name
         self.batch_size = batch_size
-        self.train = train
+        self.deform = deform
 
     @staticmethod
     def rotate_point_cloud(data):
@@ -123,16 +147,19 @@ class DataGenerator(Sequence):
                     moving = f['data'][j]
                     moving = moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
                     
-                    y, p, r = ypr_rand(-45, 45)
-                    R = q2r(qnorm(e2q(y, p, r)))
-                    d = d_rand(-1, 1)
-                    T = get_T(R, d)
-                    moving_moved = []
-                    for point in moving:
-                        point_with_1 = np.append(point, 1)
-                        new_point_with_1 = np.dot(T, point_with_1)
-                        new_point = new_point_with_1[:-1]
-                        moving_moved.append(new_point)
+                    if not self.deform:
+                        y, p, r = ypr_rand(-45, 45)
+                        R = q2r(qnorm(e2q(y, p, r)))
+                        d = d_rand(-1, 1)
+                        T = get_T(R, d)
+                        moving_moved = []
+                        for point in moving:
+                            point_with_1 = np.append(point, 1)
+                            new_point_with_1 = np.dot(T, point_with_1)
+                            new_point = new_point_with_1[:-1]
+                            moving_moved.append(new_point)
+                    else:
+                        moving_moved = compute_TPS(moving)
 
                     X1.append(fixed)
                     X2.append(moving_moved)
