@@ -39,12 +39,42 @@ class MatMul(Layer):
 
 
 def mean_subtract(input_tensor):
-	mean_subtracted_tensor =  tf.map_fn(lambda points: points - tf.reduce_mean(points, axis=0), input_tensor)
-	return mean_subtracted_tensor
+	return tf.map_fn(lambda x: x - tf.reduce_mean(x, axis=0), input_tensor)
 
 
-def PointNet_features(input_len=None):
-	input_points = Input(shape=(input_len, 3))
+def tps(inputs):
+	return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
+
+
+def register_tps(inputs, y):
+
+	sigma = tf.slice(inputs, [tf.shape(inputs)[0] - 1], [1])
+	x = tf.slice(inputs, [0], [tf.shape(inputs)[0] - 1])
+	x = tf.reshape(x, [2, -1, 3])
+
+	c = x[0]
+	x = x[1]
+
+	x_norms = tf.reduce_sum(tf.square(x), axis=1)
+	x_norms = tf.reshape(x_norms, [-1, 1])
+
+	y_norms = tf.reduce_sum(tf.square(y), axis=1)
+	y_norms = tf.reshape(y_norms, [-1, 1])
+
+	k1 = x_norms * tf.ones([1, K.int_shape(y)[0]])
+	k2 = tf.ones([K.int_shape(x)[0], 1]) * tf.transpose(y_norms)
+
+	k = k1 + k2
+	k -= (2 * tf.matmul(x, y, False, True))
+	k = tf.exp(tf.truediv(k, (-2 * tf.square(sigma))))
+
+	x0 = tf.matmul(k, c, True, False)
+
+	return [x0, y]
+
+
+def PointNet_features(input_len=None, dimensions=3):
+	input_points = Input(shape=(input_len, dimensions))
 	# input transformation net
 	x = Conv1D(64, 1, activation='relu')(input_points)
 	x = BatchNormalization()(x)
@@ -95,48 +125,68 @@ def PointNet_features(input_len=None):
 
 	# global feature
 	global_feature = MaxPooling1D(pool_size=input_len)(g)
+	global_feature = Reshape((-1,))(global_feature)
 
-	model = Model(inputs=input_points, outputs=global_feature)
+	model = Model(inputs=input_points, outputs=global_feature, name='PointNet')
 
 	return model
 
-def ConditionalTransformerNet(num_points, ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
+
+def ConditionalTransformerNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform',  ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
 	pointNet = PointNet_features(num_points)
 
-	fixed = Input(shape=(num_points, 3))
-	moving = Input(shape=(num_points, 3))
-	moving_mean_subtracted = Lambda(mean_subtract)(moving)
+	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
+	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
+	moving_mean_subtracted = Lambda(mean_subtract, name='Mean_Subtraction')(moving)
 
 	fixed_pointNet = pointNet(fixed)
 	moving_pointNet = pointNet(moving_mean_subtracted)
 
-	combined_inputs = concatenate([fixed_pointNet, moving_pointNet])
+	point_features = concatenate([fixed_pointNet, moving_pointNet])
 
-	x = Dense(1024, activation=ct_activation)(combined_inputs)
-	x = Dropout(dropout)(x)
+	x = Dense(tps_features, kernel_initializer=ct_initializer, activation=ct_activation)(point_features)
+	if dropout > 0:
+		x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
-	x = Dense(512, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)
+	
+	x = Dense(tps_features, kernel_initializer=ct_initializer, activation=ct_activation)(x)
+	if dropout > 0:
+		x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
-	x = Dense(3 * num_points, activation=ct_activation)(x)
-	x = Reshape((-1, 3))(x)
+	
+	x = Dense(tps_features * dimensions, kernel_initializer=ct_initializer, activation=ct_activation)(x)
+	if dropout > 0:
+		x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
 
-	combined_inputs = concatenate([x, moving_mean_subtracted])
-	x = Dense(64, activation=ct_activation)(combined_inputs)
-	x = Dropout(dropout)(x)
+	x = Dense(tps_features * dimensions, kernel_initializer=ct_initializer, activation=ct_activation)(x)
+	if dropout > 0:
+		x = Dropout(dropout)(x)
 	x = BatchNormalization()(x)
-	x = Dense(32, activation=ct_activation)(x)
-	x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
-	x = Dense(3)(x)
 
-	x = add([x, moving_mean_subtracted])
+	x = Dense(tps_features * dimensions * 2, kernel_initializer=ct_initializer, activation=ct_activation)(x)
+	if dropout > 0:
+		x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
+
+	x = Dense(tps_features * dimensions * 2, kernel_initializer=ct_initializer, activation=ct_activation)(x)
+	if dropout > 0:
+		x = Dropout(dropout)(x)
+	x = BatchNormalization()(x)
+
+	x = Dense(tps_features * dimensions * 2 + 1, kernel_initializer=ct_initializer)(x)
+	x = BatchNormalization()(x)
+	
+	#x = Reshape((2, tps_features, dimensions))(x)
+
+	x = Lambda(tps, name='TPS_Registration')([x, moving_mean_subtracted])
+	x = add(x)
 
 	model = Model(inputs=[fixed, moving], outputs=x)
 
 	if verbose: model.summary()
-	plot_model(model, to_file='model.png', show_shapes=True, expand_nested=True)
+	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
 
 	if multi_gpu:
 		try:

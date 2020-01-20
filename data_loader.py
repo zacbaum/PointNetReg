@@ -118,20 +118,10 @@ class DataGenerator(Sequence):
                 X2 = []
                 Y = []
                 for j in batch_index:
-                    #temp = f['data'][j]
-                    #temp = temp[np.random.randint(temp.shape[0], size=int(temp.shape[0] * 0.8)), :]
-
                     fixed = f['data'][j]
-                    #fixed = temp
                     fixed = fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.8)), :]
-                    
                     moving = f['data'][j]
-                    #moving = temp
                     moving = moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
-                    
-                    #ground_truth = f['data'][j]
-                    #ground_truth = temp
-                    #ground_truth = ground_truth[np.random.randint(ground_truth.shape[0], size=int(ground_truth.shape[0] * 0.8)), :]
                     
                     y, p, r = ypr_rand(-45, 45)
                     R = q2r(qnorm(e2q(y, p, r)))
