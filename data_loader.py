@@ -81,8 +81,8 @@ def compute_RBF(x, y, sigma):
 def compute_TPS(y):
 
     sigma = np.random.normal()
-    c = np.random.uniform(low=-1, high=1, size=(100, 3))
-    x = np.random.uniform(low=-1, high=1, size=(100, 3))
+    c = np.random.normal(loc=0, scale=0.1, size=(10, 3))
+    x = np.random.uniform(low=-1, high=1, size=(10, 3))
 
     k = compute_RBF(x, y, sigma)
 
@@ -93,40 +93,6 @@ class DataGenerator(Sequence):
         self.fie_name = file_name
         self.batch_size = batch_size
         self.deform = deform
-
-    @staticmethod
-    def rotate_point_cloud(data):
-        '''
-        Randomly rotate the point clouds to augument the dataset
-            rotation is per shape based along up direction
-            Input:
-              Nx3 array, original point clouds
-            Return:
-              Nx3 array, rotated point clouds
-        '''
-        rotation_angle = np.random.uniform() * 2 * np.pi
-        cosval = np.cos(rotation_angle)
-        sinval = np.sin(rotation_angle)
-        rotation_matrix = np.array([[cosval, 0, sinval],
-                                    [0, 1, 0],
-                                    [-sinval, 0, cosval]])
-        rotated_data = np.dot(data.reshape((-1, 3)), rotation_matrix)
-        return rotated_data
-
-    @staticmethod
-    def jitter_point_cloud(data, sigma=0.01, clip=0.05):
-        '''
-        Randomly jitter points. jittering is per point.
-            Input:
-              Nx3 array, original point clouds
-            Return:
-              Nx3 array, jittered point clouds
-        '''
-        N, C = data.shape
-        assert (clip > 0)
-        jittered_data = np.clip(sigma * np.random.randn(N, C), -1 * clip, clip)
-        jittered_data += data
-        return jittered_data
 
     def generator(self):
         f = h5py.File(self.fie_name, mode='r')
@@ -147,19 +113,20 @@ class DataGenerator(Sequence):
                     moving = f['data'][j]
                     moving = moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
                     
-                    if not self.deform:
-                        y, p, r = ypr_rand(-45, 45)
-                        R = q2r(qnorm(e2q(y, p, r)))
-                        d = d_rand(-1, 1)
-                        T = get_T(R, d)
-                        moving_moved = []
-                        for point in moving:
-                            point_with_1 = np.append(point, 1)
-                            new_point_with_1 = np.dot(T, point_with_1)
-                            new_point = new_point_with_1[:-1]
-                            moving_moved.append(new_point)
-                    else:
-                        moving_moved = compute_TPS(moving)
+                    if self.deform:
+                        moving_deformed = compute_TPS(moving)
+                        moving = moving_deformed - np.mean(moving_deformed, axis=0)
+
+                    y, p, r = ypr_rand(-45, 45)
+                    R = q2r(qnorm(e2q(y, p, r)))
+                    d = d_rand(-1, 1)
+                    T = get_T(R, d)
+                    moving_moved = []
+                    for point in moving:
+                        point_with_1 = np.append(point, 1)
+                        new_point_with_1 = np.dot(T, point_with_1)
+                        new_point = new_point_with_1[:-1]
+                        moving_moved.append(new_point)
 
                     X1.append(fixed)
                     X2.append(moving_moved)
