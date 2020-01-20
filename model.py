@@ -1,4 +1,4 @@
-from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNormalization, Dense, GlobalMaxPooling1D
+from keras.layers import Conv1D, MaxPooling1D, Flatten, Dropout, Input, BatchNormalization, Dense, GlobalMaxPooling1D, TimeDistributed, RepeatVector, LSTM
 from keras.layers import Reshape, Lambda, concatenate, multiply, add
 from keras.models import Model
 from keras.engine.topology import Layer
@@ -132,7 +132,7 @@ def PointNet_features(input_len=None, dimensions=3):
 	return model
 
 
-def ConditionalTransformerNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform',  ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
+def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform',  ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
 	pointNet = PointNet_features(num_points)
 
@@ -178,10 +178,62 @@ def ConditionalTransformerNet(num_points, dimensions=3, tps_features=1000, ct_in
 	x = Dense(tps_features * dimensions * 2 + 1, kernel_initializer=ct_initializer)(x)
 	x = BatchNormalization()(x)
 	
-	#x = Reshape((2, tps_features, dimensions))(x)
-
 	x = Lambda(tps, name='TPS_Registration')([x, moving_mean_subtracted])
 	x = add(x)
+
+	model = Model(inputs=[fixed, moving], outputs=x)
+
+	if verbose: model.summary()
+	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
+
+	if multi_gpu:
+		try:
+			model = multi_gpu_model(model)	
+		except:
+			pass
+	return model
+
+
+def ConditionalTransformerNet(num_points, dimensions=3, ct_initializer='he_uniform',  ct_activation='relu', dropout=0., multi_gpu=True, verbose=True):
+
+	pointNet = PointNet_features(num_points)
+
+	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
+	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
+	moving_mean_subtracted = Lambda(mean_subtract, name='Mean_Subtraction')(moving)
+
+	fixed_pointNet = pointNet(fixed)
+	moving_pointNet = pointNet(moving_mean_subtracted)
+
+	point_features = concatenate([fixed_pointNet, moving_pointNet])
+	point_features = RepeatVector(num_points)(point_features)
+
+	x = concatenate([point_features, moving_mean_subtracted])
+	x = TimeDistributed(
+			Dense(1024, kernel_initializer=ct_initializer, activation=ct_activation), input_shape=(1, (2048 + dimensions)))(x)
+	x = TimeDistributed(
+			Dense(1024, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(512, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(512, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(256, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(256, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(128, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(128, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(64, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(64, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(
+			Dense(dimensions, kernel_initializer=ct_initializer))(x)
+	x = LSTM(dimensions, return_sequences=True)(x)
+
+	x = add([x, moving_mean_subtracted])
 
 	model = Model(inputs=[fixed, moving], outputs=x)
 
