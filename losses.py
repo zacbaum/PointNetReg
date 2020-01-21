@@ -31,18 +31,24 @@ def gmm_nll_loss(y_true, y_pred):
 
 	def gmm_nll(y_true, y_pred):
 		
-		mix_parameter = tf.fill([K.int_shape(y_pred)[0]], 1 / K.int_shape(y_pred)[0])
-		covariance_matrix = np.diag([1e-4, 1e-4, 1e-4])
+		mix_param = tf.constant(0.00001)
+
+		point_prob = tf.fill([K.int_shape(y_pred)[0]], 1 / K.int_shape(y_pred)[0])
+
+		covariance_matrix = np.diag([1e-5, 1e-5, 1e-5])
 		covariance_matrix = tf.constant(covariance_matrix, dtype=tf.float32)
 
 		mix_gauss_pred = tfd.MixtureSameFamily(
 			mixture_distribution=tfd.Categorical(
-				probs=mix_parameter),
+				probs=point_prob),
 			components_distribution=tfd.MultivariateNormalFullCovariance(
 				loc=y_pred,
 				covariance_matrix=covariance_matrix))
 
-		return - K.mean(mix_gauss_pred.log_prob(y_true))
+		pdf = mix_gauss_pred.prob(y_true)
+		pdf = mix_param + ((1 - mix_param) * pdf)
+
+		return - K.mean(tf.math.log(pdf))
 
 	batched_losses = tf.map_fn(lambda x: gmm_nll(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
 	return K.mean(batched_losses)

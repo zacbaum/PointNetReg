@@ -1,8 +1,9 @@
 from callbacks import Prediction_Plotter, PlotLosses
 from data_loader import DataGenerator
 from keras.optimizers import SGD, Adam
+from keras.callbacks import ModelCheckpoint
 from losses import sorted_mse_loss, chamfer_loss, gmm_nll_loss
-from model import ConditionalTransformerNet
+from model import ConditionalTransformerNet, TPSTransformNet
 from mpl_toolkits.mplot3d import Axes3D
 import h5py
 import keras
@@ -10,7 +11,9 @@ import matplotlib
 import matplotlib.pyplot as plt
 import sys
 import os
+from datetime import datetime
 os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[2]
+os.environ['KERAS_BACKEND'] = 'tensorflow'
 import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
@@ -36,7 +39,7 @@ def main():
 	train_file = './ModelNet40/ply_data_train.h5'
 	test_file = './ModelNet40/ply_data_test.h5'
 
-	num_epochs = 500
+	num_epochs = 1000
 	batch_size = 3 * 32
 
 	loss_name = str(sys.argv[1])
@@ -64,7 +67,7 @@ def main():
 
 	first_train_X = train_data[0]
 	first_train_Y = train_labels[0]
-	Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, loss_name + '-train', debug=True)
+	Prediction_Plot_Train = Prediction_Plotter(first_train_X, first_train_Y, loss_name + '-train')
 
 	val = DataGenerator(test_file, batch_size, deform=True)
 
@@ -84,12 +87,15 @@ def main():
 	Prediction_Plot_Val = Prediction_Plotter(first_val_X, first_val_Y, loss_name + '-val')
 
 	LossPlotter = PlotLosses()
-	
-	model = ConditionalTransformerNet(num_points, dropout=0.50)
-	learning_rate = 1e-2
+
+	logdir = "./logs/CTN_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+	checkpointer = ModelCheckpoint(filepath='./logs/CTN_Model_' + datetime.now().strftime("%Y%m%d-%H%M%S") + '.hdf5', verbose=0, save_best_only=True)
+
+	model = ConditionalTransformerNet(num_points)
+	learning_rate = 5e-2
 	opt = Adam(lr=learning_rate)
 	model.compile(optimizer=opt,
-				  loss=loss)
+				  loss=chamfer_loss)
 
 	if not os.path.exists('./results/'):
 		os.mkdir('./results/')
@@ -104,7 +110,7 @@ def main():
 								  epochs=num_epochs,
 								  validation_data=val.generator(),
 								  validation_steps=num_val // batch_size,
-								  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val, LossPlotter],
+								  callbacks=[Prediction_Plot_Train, Prediction_Plot_Val, LossPlotter, checkpointer],
 								  verbose=2)
 	model.save('./results/CTN-' + loss_name + '.h5')
 	name = ''

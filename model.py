@@ -132,7 +132,7 @@ def PointNet_features(input_len=None, dimensions=3):
 	return model
 
 
-def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform',  ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
+def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform', ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
 	pointNet = PointNet_features(num_points)
 
@@ -194,7 +194,7 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 	return model
 
 
-def ConditionalTransformerNet(num_points, dimensions=3, ct_initializer='he_uniform',  ct_activation='relu', dropout=0., multi_gpu=True, verbose=True):
+def ConditionalTransformerNet(num_points, dimensions=3, ct_initializer='he_uniform', ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
 	pointNet = PointNet_features(num_points)
 
@@ -206,31 +206,24 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_initializer='he_unifo
 	moving_pointNet = pointNet(moving_mean_subtracted)
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
+	
+	point_features = Dense(1024, kernel_initializer=ct_initializer, activation=ct_activation)(point_features)
+	if dropout > 0:
+		point_features = Dropout(dropout)(point_features)
+	point_features = BatchNormalization()(point_features)
+
+	point_features = Dense(512, kernel_initializer=ct_initializer, activation=ct_activation)(point_features)
+	if dropout > 0:
+		point_features = Dropout(dropout)(point_features)
+	point_features = BatchNormalization()(point_features)
+
 	point_features = RepeatVector(num_points)(point_features)
 
 	x = concatenate([point_features, moving_mean_subtracted])
-	x = TimeDistributed(
-			Dense(1024, kernel_initializer=ct_initializer, activation=ct_activation), input_shape=(1, (2048 + dimensions)))(x)
-	x = TimeDistributed(
-			Dense(1024, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(512, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(512, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(256, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(256, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(128, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(128, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(64, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(64, kernel_initializer=ct_initializer, activation=ct_activation))(x)
-	x = TimeDistributed(
-			Dense(dimensions, kernel_initializer=ct_initializer))(x)
+	x = TimeDistributed(Dense(256, kernel_initializer=ct_initializer, activation=ct_activation), input_shape=(1, (512 + dimensions)))(x)
+	x = TimeDistributed(Dense(128, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(Dense(64, kernel_initializer=ct_initializer, activation=ct_activation))(x)
+	x = TimeDistributed(Dense(dimensions, kernel_initializer=ct_initializer))(x)
 	x = LSTM(dimensions, return_sequences=True)(x)
 
 	x = add([x, moving_mean_subtracted])
