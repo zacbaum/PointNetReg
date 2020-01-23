@@ -4,13 +4,6 @@ import tensorflow as tf
 import tensorflow_probability as tfp
 tfd = tfp.distributions
 
-def sorted_mse_loss(y_true, y_pred):
-	y_true_sorted = tf.sort(y_true, axis=1, direction='ASCENDING')
-	y_pred_sorted = tf.sort(y_pred, axis=1, direction='ASCENDING')
-	y_true_sorted = K.cast(y_true_sorted, y_pred_sorted.dtype)
-	return K.mean(K.square(y_true_sorted - y_pred_sorted), axis=-1)
-
-
 def chamfer_distance(y_true, y_pred):
 	row_norms_true = tf.reduce_sum(tf.square(y_true), axis=1)
 	row_norms_true = tf.reshape(row_norms_true, [-1, 1])
@@ -30,13 +23,13 @@ def chamfer_loss(y_true, y_pred):
 def gmm_nll_loss(y_true, y_pred):
 
 	def gmm_nll(y_true, y_pred):
-		
-		mix_param = tf.constant(0.00001)
 
-		point_prob = tf.fill([K.int_shape(y_pred)[0]], 1 / K.int_shape(y_pred)[0])
+		mix_param = tf.constant(0.05)
 
-		covariance_matrix = np.diag([1e-5, 1e-5, 1e-5])
-		covariance_matrix = tf.constant(covariance_matrix, dtype=tf.float32)
+		N = K.int_shape(y_pred)[0]
+		uniform_pred = tf.constant(1 / N)
+		point_prob = tf.fill([N], 1 / N)
+		covariance_matrix = tf.constant(np.diag([5e-4, 5e-4, 5e-4]), dtype=tf.float32)
 
 		mix_gauss_pred = tfd.MixtureSameFamily(
 			mixture_distribution=tfd.Categorical(
@@ -46,7 +39,7 @@ def gmm_nll_loss(y_true, y_pred):
 				covariance_matrix=covariance_matrix))
 
 		pdf = mix_gauss_pred.prob(y_true)
-		pdf = mix_param + ((1 - mix_param) * pdf)
+		pdf = (mix_param * uniform_pred) + ((1 - mix_param) * pdf)
 
 		return - K.mean(tf.math.log(pdf))
 
