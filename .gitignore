@@ -128,3 +128,4 @@ dmypy.json
 *.h5
 *.txt
 *.out
+*.hdf5
