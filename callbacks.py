@@ -41,7 +41,7 @@ class Prediction_Plotter(keras.callbacks.Callback):
             ax.set_zlim([-1, 1])
 
             plt.show()
-            plt.savefig('./results/' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=250)
+            plt.savefig(str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
             plt.close()
 
             if self.debug:
@@ -61,7 +61,7 @@ class Prediction_Plotter(keras.callbacks.Callback):
                 ax.set_zlim([limit, -limit])
 
                 plt.show()
-                plt.savefig('./results/PRED_ZOOMED-' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=250)
+                plt.savefig('./results/PRED_ZOOMED-' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
                 plt.close()
 
 
@@ -81,7 +81,7 @@ class Prediction_Plotter(keras.callbacks.Callback):
                 ax.set_zlim([-1, 1])
 
                 plt.show()
-                plt.savefig('./results/MOVE_PRED-' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=250)
+                plt.savefig('./results/MOVE_PRED-' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
                 plt.close()
 
 class PlotLosses(keras.callbacks.Callback):

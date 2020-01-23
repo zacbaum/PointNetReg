@@ -31,49 +31,15 @@ class MatMul(Layer):
 		if not isinstance(inputs, list):
 			raise ValueError('A `MatMul` layer should be called '
 							 'on a list of inputs.')
+		import tensorflow as tf
 		return tf.matmul(inputs[0], inputs[1])
 
 	def compute_output_shape(self, input_shape):
 		output_shape = [input_shape[0][0], input_shape[0][1], input_shape[1][-1]]
 		return tuple(output_shape)
 
+def PointNet_features(input_len, dimensions=3):
 
-def mean_subtract(input_tensor):
-	return tf.map_fn(lambda x: x - tf.reduce_mean(x, axis=0), input_tensor)
-
-
-def tps(inputs):
-	return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
-
-
-def register_tps(inputs, y):
-
-	sigma = tf.slice(inputs, [tf.shape(inputs)[0] - 1], [1])
-	x = tf.slice(inputs, [0], [tf.shape(inputs)[0] - 1])
-	x = tf.reshape(x, [2, -1, 3])
-
-	c = x[0]
-	x = x[1]
-
-	x_norms = tf.reduce_sum(tf.square(x), axis=1)
-	x_norms = tf.reshape(x_norms, [-1, 1])
-
-	y_norms = tf.reduce_sum(tf.square(y), axis=1)
-	y_norms = tf.reshape(y_norms, [-1, 1])
-
-	k1 = x_norms * tf.ones([1, K.int_shape(y)[0]])
-	k2 = tf.ones([K.int_shape(x)[0], 1]) * tf.transpose(y_norms)
-
-	k = k1 + k2
-	k -= (2 * tf.matmul(x, y, False, True))
-	k = tf.exp(tf.truediv(k, (-2 * tf.square(sigma))))
-
-	x0 = tf.matmul(k, c, True, False)
-
-	return [x0, y]
-
-
-def PointNet_features(input_len=None, dimensions=3):
 	input_points = Input(shape=(input_len, dimensions))
 	# input transformation net
 	x = Conv1D(64, 1, activation='relu')(input_points)
@@ -131,10 +97,42 @@ def PointNet_features(input_len=None, dimensions=3):
 
 	return model
 
-
 def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform', ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
-	pointNet = PointNet_features(num_points)
+	def mean_subtract(input_tensor):
+		import tensorflow as tf
+		return tf.map_fn(lambda x: x - tf.reduce_mean(x, axis=0), input_tensor)
+
+	def tps(inputs):
+		return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
+
+	def register_tps(inputs, y):
+
+		sigma = tf.slice(inputs, [tf.shape(inputs)[0] - 1], [1])
+		x = tf.slice(inputs, [0], [tf.shape(inputs)[0] - 1])
+		x = tf.reshape(x, [2, -1, 3])
+
+		c = x[0]
+		x = x[1]
+
+		x_norms = tf.reduce_sum(tf.square(x), axis=1)
+		x_norms = tf.reshape(x_norms, [-1, 1])
+
+		y_norms = tf.reduce_sum(tf.square(y), axis=1)
+		y_norms = tf.reshape(y_norms, [-1, 1])
+
+		k1 = x_norms * tf.ones([1, K.int_shape(y)[0]])
+		k2 = tf.ones([K.int_shape(x)[0], 1]) * tf.transpose(y_norms)
+
+		k = k1 + k2
+		k -= (2 * tf.matmul(x, y, False, True))
+		k = tf.exp(tf.truediv(k, (-2 * tf.square(sigma))))
+
+		x0 = tf.matmul(k, c, True, False)
+
+		return [x0, y]
+
+	pointNet = PointNet_features(num_points, dimensions)
 
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
 	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
@@ -193,15 +191,46 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 			pass
 	return model
 
-
 def ConditionalTransformerNet(num_points, dimensions=3, ct_initializer='he_uniform', ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
-	pointNet = PointNet_features(num_points)
+	def mean_subtract(input_tensor):
+		import tensorflow as tf
+		return tf.map_fn(lambda x: x - tf.reduce_mean(x, axis=0), input_tensor)
+
+	def tps(inputs):
+		return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
+
+	def register_tps(inputs, y):
+
+		sigma = tf.slice(inputs, [tf.shape(inputs)[0] - 1], [1])
+		x = tf.slice(inputs, [0], [tf.shape(inputs)[0] - 1])
+		x = tf.reshape(x, [2, -1, 3])
+
+		c = x[0]
+		x = x[1]
+
+		x_norms = tf.reduce_sum(tf.square(x), axis=1)
+		x_norms = tf.reshape(x_norms, [-1, 1])
+
+		y_norms = tf.reduce_sum(tf.square(y), axis=1)
+		y_norms = tf.reshape(y_norms, [-1, 1])
+
+		k1 = x_norms * tf.ones([1, K.int_shape(y)[0]])
+		k2 = tf.ones([K.int_shape(x)[0], 1]) * tf.transpose(y_norms)
+
+		k = k1 + k2
+		k -= (2 * tf.matmul(x, y, False, True))
+		k = tf.exp(tf.truediv(k, (-2 * tf.square(sigma))))
+
+		x0 = tf.matmul(k, c, True, False)
+
+		return [x0, y]
 
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
 	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
 	moving_mean_subtracted = Lambda(mean_subtract, name='Mean_Subtraction')(moving)
 
+	pointNet = PointNet_features(num_points, dimensions)
 	fixed_pointNet = pointNet(fixed)
 	moving_pointNet = pointNet(moving_mean_subtracted)
 
@@ -218,7 +247,8 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_initializer='he_unifo
 	point_features = BatchNormalization()(point_features)
 
 	point_features = RepeatVector(num_points)(point_features)
-
+	#point_features = Lambda(repeat_encoding)([point_features, moving_mean_subtracted])
+	
 	x = concatenate([point_features, moving_mean_subtracted])
 	x = TimeDistributed(Dense(256, kernel_initializer=ct_initializer, activation=ct_activation), input_shape=(1, (512 + dimensions)))(x)
 	x = TimeDistributed(Dense(128, kernel_initializer=ct_initializer, activation=ct_activation))(x)
@@ -231,7 +261,7 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_initializer='he_unifo
 	model = Model(inputs=[fixed, moving], outputs=x)
 
 	if verbose: model.summary()
-	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
+	#plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
 
 	if multi_gpu:
 		try:

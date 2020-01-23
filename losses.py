@@ -19,29 +19,32 @@ def chamfer_loss(y_true, y_pred):
 	batched_losses = tf.map_fn(lambda x: chamfer_distance(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
 	return K.mean(tf.stack(batched_losses))
 
+def gmm_nll_loss(covariance_matrix_diag, mix_param_val):
 
-def gmm_nll_loss(y_true, y_pred):
+	def gmm_nll_batched(y_true, y_pred):
 
-	def gmm_nll(y_true, y_pred):
+		def gmm_nll(y_true, y_pred):
 
-		mix_param = tf.constant(0.05)
+			mix_param = tf.constant(mix_param_val)
 
-		N = K.int_shape(y_pred)[0]
-		uniform_pred = tf.constant(1 / N)
-		point_prob = tf.fill([N], 1 / N)
-		covariance_matrix = tf.constant(np.diag([5e-4, 5e-4, 5e-4]), dtype=tf.float32)
+			N = K.int_shape(y_pred)[0]
+			uniform_pred = tf.constant(1 / N)
+			point_prob = tf.fill([N], 1 / N)
+			covariance_matrix = tf.constant(np.diag([covariance_matrix_diag, covariance_matrix_diag, covariance_matrix_diag]), dtype=tf.float32)
 
-		mix_gauss_pred = tfd.MixtureSameFamily(
-			mixture_distribution=tfd.Categorical(
-				probs=point_prob),
-			components_distribution=tfd.MultivariateNormalFullCovariance(
-				loc=y_pred,
-				covariance_matrix=covariance_matrix))
+			mix_gauss_pred = tfd.MixtureSameFamily(
+				mixture_distribution=tfd.Categorical(
+					probs=point_prob),
+				components_distribution=tfd.MultivariateNormalFullCovariance(
+					loc=y_pred,
+					covariance_matrix=covariance_matrix))
 
-		pdf = mix_gauss_pred.prob(y_true)
-		pdf = (mix_param * uniform_pred) + ((1 - mix_param) * pdf)
+			pdf = mix_gauss_pred.prob(y_true)
+			pdf = (mix_param * uniform_pred) + ((1 - mix_param) * pdf)
 
-		return - K.mean(tf.math.log(pdf))
+			return - K.mean(tf.math.log(pdf))
 
-	batched_losses = tf.map_fn(lambda x: gmm_nll(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
-	return K.mean(batched_losses)
+		batched_losses = tf.map_fn(lambda x: gmm_nll(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
+		return K.mean(batched_losses)
+
+	return gmm_nll_batched
