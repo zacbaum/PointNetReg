@@ -89,9 +89,10 @@ def compute_TPS(y):
     return np.matmul(k.T, c) + y
 
 class DataGenerator(Sequence):
-    def __init__(self, file_name, batch_size, deform=False):
+    def __init__(self, file_name, batch_size, scale=1, deform=False):
         self.fie_name = file_name
         self.batch_size = batch_size
+        self.scale = scale
         self.deform = deform
 
     def generator(self):
@@ -109,17 +110,16 @@ class DataGenerator(Sequence):
                 Y = []
                 for j in batch_index:
                     fixed = f['data'][j]
-                    fixed = fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.8)), :]
+                    fixed = self.scale * fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.8)), :]
                     moving = f['data'][j]
-                    moving = moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
-                    
+                    moving = self.scale * moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
                     if self.deform:
                         moving_deformed = compute_TPS(moving)
                         moving = moving_deformed - np.mean(moving_deformed, axis=0)
 
                     y, p, r = ypr_rand(-45, 45)
                     R = q2r(qnorm(e2q(y, p, r)))
-                    d = d_rand(-1, 1)
+                    d = d_rand(self.scale * -1, self.scale * 1)
                     T = get_T(R, d)
                     moving_moved = []
                     for point in moving:

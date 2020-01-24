@@ -45,6 +45,7 @@ def main():
 
 	num_epochs = 500
 	batch_size = 32
+	scale = 1000
 
 	loss_name = str(sys.argv[1])
 	loss_func = None
@@ -72,6 +73,7 @@ def main():
 
 	train = DataGenerator(train_file,
 						  batch_size,
+						  scale=scale,
 						  deform=True)
 	train_data = []     # store all the generated data batches
 	train_labels = []   # store all the generated ground_truth batches
@@ -92,10 +94,12 @@ def main():
 	first_train_Y = train_labels[0]
 	Prediction_Plot_Train = Prediction_Plotter(first_train_X,
 											   first_train_Y,
-											   './results' + str(sys.argv[2]) + '/' + loss_name + '-train')
+											   './results' + str(sys.argv[2]) + '/' + loss_name + '-train',
+											   scale)
 
 	val = DataGenerator(test_file,
 						batch_size,
+						scale=scale,
 						deform=True)
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches
@@ -112,12 +116,14 @@ def main():
 	first_val_Y = val_labels[0]
 	Prediction_Plot_Val = Prediction_Plotter(first_val_X,
 											 first_val_Y, 
-											 './results' + str(sys.argv[2]) + '/' + loss_name + '-val')
+											 './results' + str(sys.argv[2]) + '/' + loss_name + '-val',
+											 scale)
 
 	logdir = "./logs" + str(sys.argv[2]) + "/CTN_" + datetime.now().strftime("%Y%m%d-%H%M%S")
 	checkpointer = ModelCheckpoint(filepath='./logs' + str(sys.argv[2]) + '/CTN_Model_' + datetime.now().strftime("%Y%m%d-%H%M%S") + '.hdf5',
 								   verbose=0,
 								   save_best_only=True)
+
 	lr_reducer = ReduceLROnPlateau(monitor='val_loss',
 								   factor=0.5,
 								   patience=10,
