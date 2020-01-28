@@ -107,12 +107,13 @@ class DataGenerator(Sequence):
                 batch_index = index[batch_start: batch_end]
                 X1 = []
                 X2 = []
+                X3 = []
                 Y = []
                 for j in batch_index:
                     fixed = f['data'][j]
-                    fixed = self.scale * fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.8)), :]
+                    fixed = self.scale * fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.5)), :]
                     moving = f['data'][j]
-                    moving = self.scale * moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.8)), :]
+                    moving = self.scale * moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.5)), :]
                     if self.deform:
                         moving_deformed = compute_TPS(moving)
                         moving = moving_deformed - np.mean(moving_deformed, axis=0)
@@ -130,5 +131,6 @@ class DataGenerator(Sequence):
 
                     X1.append(fixed)
                     X2.append(moving_moved)
+                    X3.append(moving_moved)
                     Y.append(fixed)
-                yield [np.array(X1), np.array(X2)], np.array(Y)
+                yield [np.array(X1), np.array(X2), np.array(X3)], np.array(Y)
