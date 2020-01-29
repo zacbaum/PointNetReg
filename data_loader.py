@@ -89,11 +89,12 @@ def compute_TPS(y):
     return np.matmul(k.T, c) + y
 
 class DataGenerator(Sequence):
-    def __init__(self, file_name, batch_size, scale=1, deform=False):
+    def __init__(self, file_name, batch_size, scale=1, deform=False, part=False):
         self.fie_name = file_name
         self.batch_size = batch_size
         self.scale = scale
         self.deform = deform
+        self.part = part
 
     def generator(self):
         f = h5py.File(self.fie_name, mode='r')
@@ -114,6 +115,7 @@ class DataGenerator(Sequence):
                     fixed = self.scale * fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.5)), :]
                     moving = f['data'][j]
                     moving = self.scale * moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.5)), :]
+
                     if self.deform:
                         moving_deformed = compute_TPS(moving)
                         moving = moving_deformed - np.mean(moving_deformed, axis=0)
@@ -128,9 +130,17 @@ class DataGenerator(Sequence):
                         new_point_with_1 = np.dot(T, point_with_1)
                         new_point = new_point_with_1[:-1]
                         moving_moved.append(new_point)
+                    moving_moved = np.array(moving_moved)
+
+                    to_reg = moving_moved
+                    if self.part:
+                        axis = np.random.randint(0, 3)
+                        moving_moved = moving_moved[moving_moved[:, axis].argsort()]
+                        moving_moved = moving_moved[int(0.5 * moving_moved.shape[0]):]
+                        moving_moved = np.resize(moving_moved, fixed.shape)
 
                     X1.append(fixed)
                     X2.append(moving_moved)
-                    X3.append(moving_moved)
+                    X3.append(to_reg)
                     Y.append(fixed)
                 yield [np.array(X1), np.array(X2), np.array(X3)], np.array(Y)
