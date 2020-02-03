@@ -199,10 +199,8 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
 	moved = Input(shape=(num_points, dimensions), name='Moved_Model')
-	#moved_mean_subtracted = Lambda(mean_subtract, name='Moved_Mean_Subtracted')(moved)
 
 	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
-	#moving_mean_subtracted = Lambda(mean_subtract, name='Moving_Mean_Subtracted')(moving)
 
 	pointNet = PointNet_features(num_points, dimensions)
 	fixed_pointNet = pointNet(fixed)
@@ -213,8 +211,9 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 	
 	x = concatenate([point_features_matrix, moving])
 
+	#filters = [1024, 256, 64, dimensions]
 	filters = [1024, 512, 256, 128, 64, dimensions]
-	filters = [2048, 1024, 1024, 512, 512, 256, 256, 128, 128, 64, 64, dimensions]
+	#filters = [2048, 1024, 1024, 512, 512, 256, 256, 128, 128, 64, 64, dimensions]
 	for num_filters in filters:
 		if num_filters == dimensions:
 			x = Conv1D(num_filters, 1)(x)
