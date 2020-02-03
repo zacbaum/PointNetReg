@@ -89,7 +89,7 @@ def compute_TPS(y):
     return np.matmul(k.T, c) + y
 
 class DataGenerator(Sequence):
-    def __init__(self, file_name, batch_size, scale=1, deform=False, part=False):
+    def __init__(self, file_name, batch_size, scale=1, deform=False, part=0):
         self.fie_name = file_name
         self.batch_size = batch_size
         self.scale = scale
@@ -111,15 +111,29 @@ class DataGenerator(Sequence):
                 X3 = []
                 Y = []
                 for j in batch_index:
+                    # Extract data.
                     fixed = f['data'][j]
-                    fixed = self.scale * fixed[np.random.randint(fixed.shape[0], size=int(fixed.shape[0] * 0.5)), :]
                     moving = f['data'][j]
-                    moving = self.scale * moving[np.random.randint(moving.shape[0], size=int(moving.shape[0] * 0.5)), :]
+                    dims = fixed.shape
 
+                    # Randomly remove half the points.
+                    fixed = self.scale * fixed[np.random.randint(dims[0], size=int(dims[0] * 0.5)), :]
+                    moving = self.scale * moving[np.random.randint(dims[0], size=int(dims[0] * 0.5)), :]
+                    dims = fixed.shape
+                    
+                    # Normalize between [-1, 1] and mean center.
+                    fixed = 2 * (fixed - np.min(fixed)) / np.ptp(fixed) - 1
+                    fixed = fixed - np.mean(fixed, axis=0)
+
+                    moving = 2 * (moving - np.min(moving)) / np.ptp(moving) - 1
+                    moving = moving - np.mean(moving, axis=0)
+
+                    # Deform and recenter.
                     if self.deform:
                         moving_deformed = compute_TPS(moving)
                         moving = moving_deformed - np.mean(moving_deformed, axis=0)
 
+                    # Rotate, translate.
                     y, p, r = ypr_rand(-45, 45)
                     R = q2r(qnorm(e2q(y, p, r)))
                     d = d_rand(self.scale * -1, self.scale * 1)
@@ -132,13 +146,22 @@ class DataGenerator(Sequence):
                         moving_moved.append(new_point)
                     moving_moved = np.array(moving_moved)
 
+                    # Recenter again.
+                    moving_moved = moving_moved - np.mean(moving_moved, axis=0)
+
+                    # Take part(s) from point set(s).
                     to_reg = moving_moved
-                    if self.part:
+                    if self.part > 0: # Register a part to whole
                         axis = np.random.randint(0, 3)
                         moving_moved = moving_moved[moving_moved[:, axis].argsort()]
-                        moving_moved = moving_moved[int(0.5 * moving_moved.shape[0]):]
-                        moving_moved = np.resize(moving_moved, fixed.shape)
-
+                        moving_moved = moving_moved[int(0.5 * dims[0]):]
+                        moving_moved = np.resize(moving_moved, dims)
+                        if self.part > 1: # Register a part to a part
+                            axis = np.random.randint(0, 3)
+                            fixed = fixed[fixed[:, axis].argsort()]
+                            fixed = fixed[:int(0.5 * dims[0])]
+                            fixed = np.resize(fixed, dims)
+                    
                     X1.append(fixed)
                     X2.append(moving_moved)
                     X3.append(to_reg)
