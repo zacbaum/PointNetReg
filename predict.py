@@ -46,82 +46,86 @@ class MatMul(Layer):
 prostate_data = sio.loadmat('prostate.mat')
 
 all_prostates = []
+dims = [1024, 3]
 
 for prostate in prostate_data['PointSets'][0]: # Gets to the list of structs.
-	prostate_i = [np.array([])] * 5
-	for i in range(prostate.shape[1]): # Gets to the individual dataset.
-		if prostate[0, i][0] == 'ROI 1':
-			prostate_i[0] = prostate[0, i][1][:3,:].T
-		elif prostate[0, i][0] == 'ROI 2':
-			prostate_i[1] = prostate[0, i][1][:3,:].T
-		elif prostate[0, i][0] == 'ROI 3':
-			prostate_i[2] = prostate[0, i][1][:3,:].T
-		elif prostate[0, i][0] == 'ROI 4':
-			prostate_i[3] = prostate[0, i][1][:3,:].T
-		elif prostate[0, i][0] == 'ROI 5':
-			prostate_i[4] = prostate[0, i][1][:3,:].T
-	all_prostates.append(prostate_i)
+	prostate_j = [np.array([])] * 5
+	ref_data = []
+	for i in range(prostate.shape[1]): # Gets to the individual dataset and gets the reference normalization parameters.
 
-# SHOULD WE BE CONCATENATING SURFACE WITH TRANSITION?
-# SHOULD WE BE CONCATENATING ROIS?
+		if prostate[0, i][0].size > 0:
+			if prostate[0, i][0] == 'ROI 1':
+				mc_data = prostate[0, i][1][:3,:].T
+				norm_data = mc_data - np.mean(mc_data, axis=0)
 
-# UPSAMPLE ALL TO 1024 POINTS
+	for j in range(prostate.shape[1]): # Gets to the individual dataset and stores rescaled, upsampled and centered points.
+		
+		if prostate[0, j][0].size > 0:
+
+			prostate_j_data = prostate[0, j][1][:3,:].T
+			prostate_j_data_centered = prostate_j_data - np.mean(mc_data, axis=0)
+			prostate_j_data_normalized = 2 * (prostate_j_data_centered - np.min(norm_data)) / np.ptp(norm_data) - 1
+			prostate_j_data_resized = np.resize(prostate_j_data_normalized, dims)
+
+			if prostate[0, j][0] == 'ROI 1':
+				prostate_j[0] = prostate_j_data_resized
+			elif prostate[0, j][0] == 'ROI 2':
+				prostate_j[1] = prostate_j_data_resized
+			elif prostate[0, j][0] == 'ROI 3':
+				prostate_j[2] = prostate_j_data_resized
+			elif prostate[0, j][0] == 'ROI 4':
+				prostate_j[3] = prostate_j_data_resized
+			elif prostate[0, j][0] == 'ROI 5':
+				prostate_j[4] = prostate_j_data_resized
+
+	all_prostates.append(prostate_j)
 
 model = load_model('model.h5',
 				   custom_objects={'MatMul':MatMul},
 				   compile=False)
 
-test_file = './ModelNet40/ply_data_test.h5'
-scale = 1
-test = DataGenerator(test_file, 1, scale=scale, deform=True, part=True)
+for i in range(len(all_prostates)):
 
-for it in range(10):
-	test_data = []     # store all the generated data batches
-	test_labels = []   # store all the generated ground_truth batches
-	max_iter = 1        # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
-	i = 0
-	for d, l in test.generator():
-		test_data.append(d)
-		test_labels.append(l)
-		i += 1
-		if i == max_iter:
-			break
+	if all_prostates[i][2].size == 0: continue
 
 	fig = plt.figure()
 	ax = fig.add_subplot(111, projection='3d')
 
-	fixed = test_data[0][0][0]
+	fixed = all_prostates[i][0]
 	x_fx = [i[0] for i in fixed]
 	y_fx = [i[1] for i in fixed]
 	z_fx = [i[2] for i in fixed]
 
-	defm = test_data[0][1][0]
-	x_def = [i[0] for i in defm]
-	y_def = [i[1] for i in defm]
-	z_def = [i[2] for i in defm]
+	move = all_prostates[i+1][0]
+	x_mv = [i[0] for i in move]
+	y_mv = [i[1] for i in move]
+	z_mv = [i[2] for i in move]
 
-	inp = test_data[0][2][0]
+	inp = all_prostates[i+1][0]
 	x_inp = [i[0] for i in inp]
 	y_inp = [i[1] for i in inp]
 	z_inp = [i[2] for i in inp]
 
-	pred = model.predict(test_data[0])
+	pred = model.predict([[np.array(fixed)],	# Fixed
+						  [np.array(move)],		# Moving
+						  [np.array(inp)]])		# To_Reg
 
 	x_pred = [i[0] for i in pred[0]]
 	y_pred = [i[1] for i in pred[0]]
 	z_pred = [i[2] for i in pred[0]]
 
 	ax.scatter(x_fx, y_fx, z_fx, c='y', marker='.')
-	ax.scatter(x_def, y_def, z_def, c='r', marker='.')
-	#ax.scatter(x_inp, y_inp, z_inp, c='b', marker='.')
+	#ax.scatter(x_mv, y_mv, z_mv, c='r', marker='.')
+	ax.scatter(x_inp, y_inp, z_inp, c='b', marker='.')
 	ax.scatter(x_pred, y_pred, z_pred, c='g', marker='.')
 
-	lim = 1 * scale
+	lim = 1
 	ax.set_xlim([-lim, lim])
 	ax.set_ylim([-lim, lim])
 	ax.set_zlim([-lim, lim])
 
 	plt.show()
-	plt.savefig('scatter' + str(it) + '.png', dpi=250)
+	plt.savefig('scatter' + str(i) + '.png', dpi=250)
 	plt.close()
-'''
+
+print("DONE")
