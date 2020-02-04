@@ -36,11 +36,12 @@ def main():
 
 	batch_size = 80
 	scale = 1
+	load_from_file = False
 
 	loss_name = str(sys.argv[1])
 	loss_func = None
 
-	wandb.init(project = "ctn-chamfer", name = 'd0.0 bn0 gn5e-2 lr1e-3 mc-pp')
+	wandb.init(project = "ctn-chamfer", name = 'd0.0 bn0 gn0 lr1e-4')
 
 	if loss_name == 'chamfer_loss':
 		learning_rate = float(sys.argv[3])
@@ -92,10 +93,18 @@ def main():
 
 	LossPlotter = PlotLosses()
 
-	model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=False, noise=5e-2)
-	optimizer = Adam(lr=learning_rate)
-	model.compile(optimizer=optimizer,
-				  loss=loss_func)
+	if load_from_file:
+		from keras.models import load_model
+		from keras.engine.topology import Layer
+		from model import MatMul
+		model = load_model('model-best.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
+		initial_epoch = 128
+	else:
+		model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=False, noise=5e-2)
+		optimizer = Adam(lr=learning_rate)
+		model.compile(optimizer=optimizer,
+					  loss=loss_func)
+		initial_epoch = 0
 	
 	f = h5py.File(train_file, mode='r')
 	num_train = f['data'].shape[0]
@@ -103,10 +112,11 @@ def main():
 	num_val = f['data'].shape[0]
 
 	history = model.fit_generator(train.generator(),
-								  steps_per_epoch=num_train// batch_size,
+								  steps_per_epoch=num_train // batch_size,
 								  epochs=2500,
+								  initial_epoch=initial_epoch,
 								  validation_data=val.generator(),
-								  validation_steps=num_val// batch_size,
+								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Val, 
 											 checkpointer,
 											 WandbCallback()],
@@ -115,10 +125,6 @@ def main():
 	model.save('./results' + str(sys.argv[2]) + '/CTN-' + loss_name + '.h5')
 	model.save(os.path.join(wandb.run.dir, "model.h5"))
 	
-	name = ''
-	output = [(name, history)]
-	plot_results('loss', output, loss_name + '-loss') 
-
 if __name__ == '__main__':
 
 	main()
