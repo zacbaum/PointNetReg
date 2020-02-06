@@ -86,7 +86,7 @@ for i in range(len(filenames)-2): # Get all complete triples of scans.
 				indxs.append(i+1)
 				indxs.append(i+2)
 
-all_prostates_MESH = []
+all_prostates = []
 for indx in indxs:
 	prostate = prostate_data['Meshes'][0][indx] # Gets to the list of structs.
 	prostate_j = [np.array([])] * 8
@@ -142,11 +142,11 @@ for indx in indxs:
 			elif prostate[0][j][0][0][0] == 'Base':
 				prostate_j[6] = prostate_j_data_resized
 
-	all_prostates_MESH.append(prostate_j)
+	all_prostates.append(prostate_j)
 
 d_c_list = []
 d_h_list = []
-max_iters = len(all_prostates_MESH)-2
+max_iters = len(all_prostates)-2
 max_iters = 10
 t_init = time.time()
 
@@ -154,9 +154,9 @@ for i in range(0, max_iters, 3):
 
 	t = time.time()
 
-	ADC = all_prostates_MESH[i]
-	T1 = all_prostates_MESH[i+1]
-	T2 = all_prostates_MESH[i+2]
+	ADC = all_prostates[i]
+	T1 = all_prostates[i+1]
+	T2 = all_prostates[i+2]
 	patient_data = [ADC, T1, T2]
 
 	# All possible patient data permuatations for the testing:
@@ -189,10 +189,8 @@ for i in range(0, max_iters, 3):
 		x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
 		# Moving Apex & Base
 		moving_apex = patient_data[perm[1]][5]
-		moving_apex_u = np.unique(moving_apex, axis=0)
 		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
 		moving_base = patient_data[perm[1]][6]
-		moving_base_u = np.unique(moving_base, axis=0)
 		x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
 
 		# Moving2Fixed Prostate
@@ -202,32 +200,50 @@ for i in range(0, max_iters, 3):
 		pred_u = np.unique(pred[0], axis=0)
 		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
 
+		# Moving2Fixed Apex & Base
+		pred_apex = model.predict([[np.array(fixed_prostate)],
+							       [np.array(moving_prostate)],
+							       [np.array(moving_apex)]])
+		pred_apex_u = np.unique(pred[0], axis=0)
+		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
+		pred_base = model.predict([[np.array(fixed_prostate)],
+							       [np.array(moving_prostate)],
+							       [np.array(moving_base)]])
+		pred_base_u = np.unique(pred[0], axis=0)
+		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
+
 		fig = plt.figure()
 		lim = 1
 		
 		ax0 = fig.add_subplot(221, projection='3d')
 		ax0.set_title('Fixed P & Fixed Tz')
-		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.3)
-		ax0.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.3)
+		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax0.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
 		ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
 		ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
 
 		ax1 = fig.add_subplot(222, projection='3d')
 		ax1.set_title('Moving P & Moving Tz')
-		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.3)
-		ax1.scatter(x_mtz, y_mtz, z_mtz, c='b', marker='.', alpha=0.3)
+		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+		ax1.scatter(x_mtz, y_mtz, z_mtz, c='b', marker='.', alpha=0.2)
 		ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
 		ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
 
 		ax2 = fig.add_subplot(223, projection='3d')
 		ax2.set_title('Fixed P & Moving2Fixed P')
-		ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.3)
-		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.3)
+		ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+		ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+		ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+		ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+		ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
 
 		ax3 = fig.add_subplot(224, projection='3d')
 		ax3.set_title('Fixed Tz & Moving2Fixed P')
-		ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.3)
-		ax3.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.3)
+		ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
+		ax3.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+		ax3.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+		ax3.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
 
 		ax0.set_xlim([-lim, lim])
 		ax1.set_xlim([-lim, lim])
@@ -259,7 +275,7 @@ for i in range(0, max_iters, 3):
 		plt.savefig('./prostate_results/P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
 
-	print(round(i / (len(all_prostates_MESH) - 2) * 100), round(time.time() - t, 2), round(time.time() - t_init, 2))
+	print(round(i / (len(all_prostates) - 2) * 100), round(time.time() - t, 2), round(time.time() - t_init, 2))
 
 print()
 print('CD:', round(sum(d_c_list)/len(d_c_list), 2), round(min(d_c_list), 2), round(max(d_c_list), 2))
@@ -268,13 +284,14 @@ print()
 
 d_c_list = []
 d_h_list = []
+
 for i in range(0, max_iters, 3):
 
 	t = time.time()
 
-	ADC = all_prostates_MESH[i]
-	T1 = all_prostates_MESH[i+1]
-	T2 = all_prostates_MESH[i+2]
+	ADC = all_prostates[i]
+	T1 = all_prostates[i+1]
+	T2 = all_prostates[i+2]
 	patient_data = [ADC, T1, T2]
 
 	# All possible patient data permuatations for the testing:
@@ -306,10 +323,8 @@ for i in range(0, max_iters, 3):
 		
 		# Moving Apex & Base
 		moving_apex = patient_data[perm[1]][5]
-		moving_apex_u = np.unique(moving_apex, axis=0)
 		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
 		moving_base = patient_data[perm[1]][6]
-		moving_base_u = np.unique(moving_base, axis=0)
 		x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
 
 		# Moving2Fixed Prostate & Tz
@@ -319,30 +334,47 @@ for i in range(0, max_iters, 3):
 		pred_u = np.unique(pred[0], axis=0)
 		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
 
+		# Moving2Fixed Apex & Base
+		pred_apex = model.predict([[np.array(fixed_prostate)],
+							       [np.array(moving_prostate)],
+							       [np.array(moving_apex)]])
+		pred_apex_u = np.unique(pred[0], axis=0)
+		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
+		pred_base = model.predict([[np.array(fixed_prostate)],
+							       [np.array(moving_prostate)],
+							       [np.array(moving_base)]])
+		pred_base_u = np.unique(pred[0], axis=0)
+		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
+
 		fig = plt.figure()
 		lim = 1
 		
 		ax0 = fig.add_subplot(221, projection='3d')
 		ax0.set_title('Fixed P & Tz')
-		ax0.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.3)
+		ax0.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
 		ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
 		ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
 
 		ax1 = fig.add_subplot(222, projection='3d')
 		ax1.set_title('Moving P & Tz')
-		ax1.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.3)
+		ax1.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.2)
 		ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
 		ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
 
 		ax2 = fig.add_subplot(223, projection='3d')
-		ax2.set_title('Fixed P & Tz & Moving P & Tz')
-		ax2.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.3)
-		ax2.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.3)
+		ax2.set_title('Moving2Fixed P & Tz')
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+		ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+		ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
 
 		ax3 = fig.add_subplot(224, projection='3d')
 		ax3.set_title('Fixed P & Tz & Moving2Fixed P & Tz')
-		ax3.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.3)
-		ax3.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.3)
+		ax3.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
+		ax3.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+		ax3.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+		ax3.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+		ax3.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+		ax3.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
 
 		ax0.set_xlim([-lim, lim])
 		ax1.set_xlim([-lim, lim])
@@ -374,7 +406,7 @@ for i in range(0, max_iters, 3):
 		plt.savefig('./prostate_results/P+Tz2P+Tz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
 
-	print(round(i / (len(all_prostates_MESH) - 2) * 100), round(time.time() - t, 2), round(time.time() - t_init, 2))
+	print(round(i / (len(all_prostates) - 2) * 100), round(time.time() - t, 2), round(time.time() - t_init, 2))
 
 print()
 print('CD:', round(sum(d_c_list)/len(d_c_list), 2), round(min(d_c_list), 2), round(max(d_c_list), 2))
