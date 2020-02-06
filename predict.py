@@ -62,6 +62,11 @@ def get_unique_plot_points(points):
 if not os.path.exists('./prostate_results/'):
 	os.mkdir('./prostate_results/')
 
+# Load the model.
+model = load_model('model-1024-gn5e-2.h5',
+				   custom_objects={'MatMul':MatMul},
+				   compile=False)
+
 prostate_data = sio.loadmat('prostate.mat')
 dims = [1024, 3]
 
@@ -81,47 +86,6 @@ for i in range(len(filenames)-2): # Get all complete triples of scans.
 				indxs.append(i+1)
 				indxs.append(i+2)
 
-'''
-all_prostates_PS = []
-for indx in indxs:
-	prostate = prostate_data['PointSets'][0][indx] # Gets to the list of structs.
-	prostate_j = [np.array([])] * 8
-	ref_data = []
-
-	for i in range(prostate.shape[1]): # Gets to the individual dataset and gets the reference normalization parameters.
-
-		if prostate[0, i][0].size > 0:
-			if prostate[0, i][0] == 'ROI 1':
-				prostate_j[7] = prostate[0, i][1][:3,:].T
-				mc_data = prostate[0, i][1][:3,:].T
-				norm_data = mc_data - np.mean(mc_data, axis=0)
-
-	for j in range(prostate.shape[1]): # Gets to the individual dataset and stores rescaled, upsampled and centered points.
-		
-		if prostate[0, j][0].size > 0:
-			prostate_j_data = prostate[0, j][1][:3,:].T
-			prostate_j_data_centered = prostate_j_data - np.mean(mc_data, axis=0)
-			prostate_j_data_normalized = 2 * (prostate_j_data_centered - np.min(norm_data)) / np.ptp(norm_data) - 1
-			prostate_j_data_resized = np.resize(prostate_j_data_normalized, dims)
-
-			if prostate[0, j][0] == 'ROI 1':
-				prostate_j[0] = prostate_j_data_resized
-			elif prostate[0, j][0] == 'ROI 2':
-				prostate_j[1] = prostate_j_data_resized
-			elif prostate[0, j][0] == 'ROI 3':
-				prostate_j[2] = prostate_j_data_resized
-			elif prostate[0, j][0] == 'ROI 4':
-				prostate_j[3] = prostate_j_data_resized
-			elif prostate[0, j][0] == 'ROI 5':
-				prostate_j[4] = prostate_j_data_resized
-			elif prostate[0, j][0] == 'Apex':
-				prostate_j[5] = prostate_j_data_resized
-			elif prostate[0, j][0] == 'Base':
-				prostate_j[6] = prostate_j_data_resized
-
-	all_prostates_PS.append(prostate_j)
-'''
-
 all_prostates_MESH = []
 for indx in indxs:
 	prostate = prostate_data['Meshes'][0][indx] # Gets to the list of structs.
@@ -132,12 +96,16 @@ for indx in indxs:
 
 		if prostate[0][i][0][0][0].size > 0:
 			if prostate[0][i][0][0][0] == 'ROI 1':
+			
 				all_shapes = [prostate[0][i][0][0][x].shape for x in range(len(prostate[0][i][0][0]))]
 				threeD_shapes = [all_shapes[x] for x in range(len(all_shapes)) if 3 in all_shapes[x]]
 				second_largest = [threeD_shapes.index(x) for x in sorted(threeD_shapes, key=lambda y: y[1],  reverse=True)][1]
 				val_index = all_shapes.index(threeD_shapes[second_largest])
 				prostate_j[7] = prostate[0][i][0][0][val_index]
-				mc_data = prostate[0][i][0][0][val_index]
+				
+				if prostate_j[7].shape[0] > dims[0]:
+					prostate_j[7] = prostate_j[7][np.random.randint(prostate_j[7].shape[0], size=dims[0]), :]
+				mc_data = prostate_j[7]
 				norm_data = mc_data - np.mean(mc_data, axis=0)
 
 	for j in range(prostate.shape[1]): # Gets to the individual dataset and stores rescaled, upsampled and centered points.
@@ -152,6 +120,9 @@ for indx in indxs:
 				second_largest = [threeD_shapes.index(x) for x in sorted(threeD_shapes, key=lambda y: y[1],  reverse=True)][1]
 				val_index = all_shapes.index(threeD_shapes[second_largest])
 			prostate_j_data = prostate[0][j][0][0][val_index]
+
+			if prostate_j_data.shape[0] > dims[0]:
+				prostate_j_data = prostate_j_data[np.random.randint(prostate_j_data.shape[0], size=dims[0]), :]
 			prostate_j_data_centered = prostate_j_data - np.mean(mc_data, axis=0)
 			prostate_j_data_normalized = 2 * (prostate_j_data_centered - np.min(norm_data)) / np.ptp(norm_data) - 1
 			prostate_j_data_resized = np.resize(prostate_j_data_normalized, dims)
@@ -173,19 +144,13 @@ for indx in indxs:
 
 	all_prostates_MESH.append(prostate_j)
 
-# Load the model.
-model = load_model('model.h5',
-				   custom_objects={'MatMul':MatMul},
-				   compile=False)
-
-
-#fixed = np.vstack((all_prostates_MESH[i][0][int(0.5 * dims[0]):],
-#				   all_prostates_MESH[i][1][int(0.5 * dims[0]):]))
-
 d_c_list = []
 d_h_list = []
+max_iters = len(all_prostates_MESH)-2
+max_iters = 10
 t_init = time.time()
-for i in range(0, len(all_prostates_MESH)-2, 3):
+
+for i in range(0, max_iters, 3):
 
 	t = time.time()
 
@@ -208,7 +173,7 @@ for i in range(0, len(all_prostates_MESH)-2, 3):
 		# Fixed Tz
 		fixed_transition_zone = patient_data[perm[0]][1]
 		x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
-		# Fixed Apex and Base
+		# Fixed Apex & Base
 		fixed_apex = patient_data[perm[0]][5]
 		fixed_apex_u = np.unique(fixed_apex, axis=0)
 		x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
@@ -222,7 +187,7 @@ for i in range(0, len(all_prostates_MESH)-2, 3):
 		# Moving Tz
 		moving_transition_zone = patient_data[perm[1]][1]
 		x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
-		# Moving Apex and Base
+		# Moving Apex & Base
 		moving_apex = patient_data[perm[1]][5]
 		moving_apex_u = np.unique(moving_apex, axis=0)
 		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
@@ -293,6 +258,122 @@ for i in range(0, len(all_prostates_MESH)-2, 3):
 		plt.show()
 		plt.savefig('./prostate_results/P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
+
+	print(round(i / (len(all_prostates_MESH) - 2) * 100), round(time.time() - t, 2), round(time.time() - t_init, 2))
+
+print()
+print('CD:', round(sum(d_c_list)/len(d_c_list), 2), round(min(d_c_list), 2), round(max(d_c_list), 2))
+print('HD:', round(sum(d_h_list)/len(d_h_list), 2), round(min(d_h_list), 2), round(max(d_h_list), 2))
+print()
+
+d_c_list = []
+d_h_list = []
+for i in range(0, max_iters, 3):
+
+	t = time.time()
+
+	ADC = all_prostates_MESH[i]
+	T1 = all_prostates_MESH[i+1]
+	T2 = all_prostates_MESH[i+2]
+	patient_data = [ADC, T1, T2]
+
+	# All possible patient data permuatations for the testing:
+	# ADC <- T1, ADC <- T2, T1 <- ADC, T1 <- T2, T2 <- ADC, T2 <- T1
+	perms = [[0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1]]
+	for perm in perms:
+
+		fig = plt.figure()
+
+		# Fixed Prostate & Tz
+		fixed = np.resize(np.vstack((np.unique(patient_data[perm[0]][0], axis=0),
+						  			 np.unique(patient_data[perm[0]][1], axis=0))), dims)
+		fixed_u = np.unique(fixed, axis=0)
+		x_fptz, y_fptz, z_fptz = get_unique_plot_points(fixed)
+
+		# Fixed Apex & Base
+		fixed_apex = patient_data[perm[0]][5]
+		fixed_apex_u = np.unique(fixed_apex, axis=0)
+		x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
+		fixed_base = patient_data[perm[0]][6]
+		fixed_base_u = np.unique(fixed_base, axis=0)
+		x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
+
+		# Moving Prostate & Tz
+		moving = np.resize(np.vstack((np.unique(patient_data[perm[1]][0], axis=0),
+						   			  np.unique(patient_data[perm[1]][1], axis=0))), dims)
+		moving_u = np.unique(moving, axis=0)
+		x_mptz, y_mptz, z_mptz = get_unique_plot_points(moving)
+		
+		# Moving Apex & Base
+		moving_apex = patient_data[perm[1]][5]
+		moving_apex_u = np.unique(moving_apex, axis=0)
+		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
+		moving_base = patient_data[perm[1]][6]
+		moving_base_u = np.unique(moving_base, axis=0)
+		x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
+
+		# Moving2Fixed Prostate & Tz
+		pred = model.predict([[np.array(fixed)],
+							  [np.array(moving)],
+							  [np.array(moving)]])
+		pred_u = np.unique(pred[0], axis=0)
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
+
+		fig = plt.figure()
+		lim = 1
+		
+		ax0 = fig.add_subplot(221, projection='3d')
+		ax0.set_title('Fixed P & Tz')
+		ax0.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.3)
+		ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+		ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+
+		ax1 = fig.add_subplot(222, projection='3d')
+		ax1.set_title('Moving P & Tz')
+		ax1.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.3)
+		ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
+		ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
+
+		ax2 = fig.add_subplot(223, projection='3d')
+		ax2.set_title('Fixed P & Tz & Moving P & Tz')
+		ax2.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.3)
+		ax2.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.3)
+
+		ax3 = fig.add_subplot(224, projection='3d')
+		ax3.set_title('Fixed P & Tz & Moving2Fixed P & Tz')
+		ax3.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.3)
+		ax3.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.3)
+
+		ax0.set_xlim([-lim, lim])
+		ax1.set_xlim([-lim, lim])
+		ax2.set_xlim([-lim, lim])
+		ax3.set_xlim([-lim, lim])
+		ax0.set_ylim([-lim, lim])
+		ax1.set_ylim([-lim, lim])
+		ax2.set_ylim([-lim, lim])
+		ax3.set_ylim([-lim, lim])
+		ax0.set_zlim([-lim, lim])
+		ax1.set_zlim([-lim, lim])
+		ax2.set_zlim([-lim, lim])
+		ax3.set_zlim([-lim, lim])
+
+		ref_data = patient_data[perm[0]][7]
+		ref_data_mc = ref_data - np.mean(ref_data, axis=0)
+
+		# Scale the data so we can compute metrics with correct values.
+		pred_dn = 0.5 * ((pred_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		fixed_dn = 0.5 * ((fixed_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		d_c = chamfer(fixed_dn, pred_dn)
+		d_c_list.append(d_c)
+		d_h = hausdorff_2way(fixed_dn, pred_dn)
+		d_h_list.append(d_h)
+
+		tags = ['ADC', 'T1', 'T2']
+		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ')')
+		plt.show()
+		plt.savefig('./prostate_results/P+Tz2P+Tz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
+		plt.close()
+
 	print(round(i / (len(all_prostates_MESH) - 2) * 100), round(time.time() - t, 2), round(time.time() - t_init, 2))
 
 print()
