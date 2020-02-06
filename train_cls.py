@@ -12,9 +12,9 @@ from data_loader import DataGenerator
 from datetime import datetime
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint
-from keras.optimizers import SGD, Adam
-from losses import chamfer_loss, gmm_nll_loss
-from model import ConditionalTransformerNet, TPSTransformNet
+from keras.optimizers import Adam
+from losses import chamfer_loss
+from model import ConditionalTransformerNet
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
 matplotlib.use('AGG')
@@ -24,7 +24,6 @@ from keras.backend.tensorflow_backend import set_session
 config = tf.ConfigProto()
 config.gpu_options.per_process_gpu_memory_fraction  = 0.50
 set_session(tf.Session(config=config))
-
 
 def main():
 	train_file = './ModelNet40/ply_data_train.h5'
