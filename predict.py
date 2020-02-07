@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 matplotlib.use('AGG')
 import os
 import re
-os.environ["CUDA_VISIBLE_DEVICES"]='2'
+os.environ["CUDA_VISIBLE_DEVICES"]='1'
 import time
 from keras.models import load_model
 from keras.engine.topology import Layer
@@ -63,12 +63,12 @@ if not os.path.exists('./prostate_results/'):
 	os.mkdir('./prostate_results/')
 
 # Load the model.
-model = load_model('model-1024-gn5e-2.h5',
+model = load_model('d0bn0gn0lr1e-3.h5',
 				   custom_objects={'MatMul':MatMul},
 				   compile=False)
 
 prostate_data = sio.loadmat('prostate.mat')
-dims = [1024, 3]
+dims = [2048, 3]
 
 filenames = []
 for fname in prostate_data['Filenames'][0]: # Get all filenames.
@@ -146,8 +146,9 @@ for indx in indxs:
 
 d_c_list = []
 d_h_list = []
+d_apex_list = []
+d_base_list = []
 max_iters = len(all_prostates)-2
-max_iters = 10
 t_init = time.time()
 
 for i in range(0, max_iters, 3):
@@ -204,12 +205,12 @@ for i in range(0, max_iters, 3):
 		pred_apex = model.predict([[np.array(fixed_prostate)],
 							       [np.array(moving_prostate)],
 							       [np.array(moving_apex)]])
-		pred_apex_u = np.unique(pred[0], axis=0)
+		pred_apex_u = np.unique(pred_apex[0], axis=0)
 		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
 		pred_base = model.predict([[np.array(fixed_prostate)],
 							       [np.array(moving_prostate)],
 							       [np.array(moving_base)]])
-		pred_base_u = np.unique(pred[0], axis=0)
+		pred_base_u = np.unique(pred_base[0], axis=0)
 		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
 
 		fig = plt.figure()
@@ -269,8 +270,17 @@ for i in range(0, max_iters, 3):
 		d_h = hausdorff_2way(fixed_prostate_dn, pred_dn)
 		d_h_list.append(d_h)
 
+		fixed_apex_dn = 0.5 * ((fixed_apex_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		fixed_base_dn = 0.5 * ((fixed_base_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		pred_apex_dn = 0.5 * ((pred_apex_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		pred_base_dn = 0.5 * ((pred_base_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		d_apex = np.linalg.norm(fixed_apex_dn - pred_apex_dn)
+		d_apex_list.append(d_apex)
+		d_base = np.linalg.norm(fixed_base_dn - pred_base_dn)
+		d_base_list.append(d_base)
+
 		tags = ['ADC', 'T1', 'T2']
-		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ')')
+		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ', Apex: ' + str('%.2f') % d_apex + ', Base: ' + str('%.2f') % d_base + ')')
 		plt.show()
 		plt.savefig('./prostate_results/P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
@@ -280,11 +290,14 @@ for i in range(0, max_iters, 3):
 print()
 print('CD:', round(sum(d_c_list)/len(d_c_list), 2), round(min(d_c_list), 2), round(max(d_c_list), 2))
 print('HD:', round(sum(d_h_list)/len(d_h_list), 2), round(min(d_h_list), 2), round(max(d_h_list), 2))
+print('Apex:', round(sum(d_apex_list)/len(d_apex_list), 2), round(min(d_apex_list), 2), round(max(d_apex_list), 2))
+print('Base:', round(sum(d_base_list)/len(d_base_list), 2), round(min(d_base_list), 2), round(max(d_base_list), 2))
 print()
 
 d_c_list = []
 d_h_list = []
-
+d_apex_list = []
+d_base_list = []
 for i in range(0, max_iters, 3):
 
 	t = time.time()
@@ -335,15 +348,15 @@ for i in range(0, max_iters, 3):
 		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
 
 		# Moving2Fixed Apex & Base
-		pred_apex = model.predict([[np.array(fixed_prostate)],
-							       [np.array(moving_prostate)],
+		pred_apex = model.predict([[np.array(fixed)],
+							       [np.array(moving)],
 							       [np.array(moving_apex)]])
-		pred_apex_u = np.unique(pred[0], axis=0)
+		pred_apex_u = np.unique(pred_apex[0], axis=0)
 		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
-		pred_base = model.predict([[np.array(fixed_prostate)],
-							       [np.array(moving_prostate)],
+		pred_base = model.predict([[np.array(fixed)],
+							       [np.array(moving)],
 							       [np.array(moving_base)]])
-		pred_base_u = np.unique(pred[0], axis=0)
+		pred_base_u = np.unique(pred_base[0], axis=0)
 		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
 
 		fig = plt.figure()
@@ -400,10 +413,19 @@ for i in range(0, max_iters, 3):
 		d_h = hausdorff_2way(fixed_dn, pred_dn)
 		d_h_list.append(d_h)
 
+		fixed_apex_dn = 0.5 * ((fixed_apex_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		fixed_base_dn = 0.5 * ((fixed_base_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		pred_apex_dn = 0.5 * ((pred_apex_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		pred_base_dn = 0.5 * ((pred_base_u * np.ptp(ref_data_mc)) + (2 * np.min(ref_data_mc)) + np.ptp(ref_data_mc))
+		d_apex = np.linalg.norm(fixed_apex_dn - pred_apex_dn)
+		d_apex_list.append(d_apex)
+		d_base = np.linalg.norm(fixed_base_dn - pred_base_dn)
+		d_base_list.append(d_base)
+
 		tags = ['ADC', 'T1', 'T2']
-		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ')')
+		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ', Apex: ' + str('%.2f') % d_apex + ', Base: ' + str('%.2f') % d_base + ')')
 		plt.show()
-		plt.savefig('./prostate_results/P+Tz2P+Tz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
+		plt.savefig('./prostate_results/PTz2PTz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
 
 	print(round(i / (len(all_prostates) - 2) * 100), round(time.time() - t, 2), round(time.time() - t_init, 2))
@@ -411,3 +433,5 @@ for i in range(0, max_iters, 3):
 print()
 print('CD:', round(sum(d_c_list)/len(d_c_list), 2), round(min(d_c_list), 2), round(max(d_c_list), 2))
 print('HD:', round(sum(d_h_list)/len(d_h_list), 2), round(min(d_h_list), 2), round(max(d_h_list), 2))
+print('Apex:', round(sum(d_apex_list)/len(d_apex_list), 2), round(min(d_apex_list), 2), round(max(d_apex_list), 2))
+print('Base:', round(sum(d_base_list)/len(d_base_list), 2), round(min(d_base_list), 2), round(max(d_base_list), 2))
