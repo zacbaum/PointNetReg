@@ -19,6 +19,36 @@ def chamfer_loss(y_true, y_pred):
 	batched_losses = tf.map_fn(lambda x: chamfer_distance(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
 	return K.mean(tf.stack(batched_losses))
 
+def variational_distance(y_true, y_pred):
+	sigma = 1.0
+	N = tf.cast(K.int_shape(y_pred)[0], dtype=tf.float32)
+
+	# Part 1 - D(a||a')
+	a = tf.reduce_sum(tf.square(y_true), axis=1)
+	a = tf.reshape(a, [-1, 1])
+	D_top = tf.sqrt(a - 2 * tf.matmul(y_true, tf.transpose(y_true)) + tf.transpose(a))
+	# Part 1b - Rest of top
+	D_top = tf.truediv(tf.square(D_top), (2 * sigma**2))
+	D_top = tf.truediv(tf.exp(-D_top), N)
+
+	# Part 2 - D(a||b)
+	a = tf.reduce_sum(tf.square(y_true), axis=1)
+	a = tf.reshape(a, [-1, 1])
+	b = tf.reduce_sum(tf.square(y_pred), axis=1)
+	b = tf.reshape(b, [1, -1])
+	D_bottom = tf.sqrt(a - 2 * tf.matmul(y_true, tf.transpose(y_pred)) + b)
+	# Part 2b - Rest of bottom
+	D_bottom = tf.truediv(tf.square(D_bottom), (2 * sigma**2))
+	D_bottom = tf.truediv(tf.exp(-D_bottom), N)
+
+	main_div = tf.log(tf.truediv(tf.reduce_sum(D_top, axis=1), tf.reduce_sum(D_bottom, axis=1)))
+	main_div_sum = tf.reduce_sum(main_div) / N
+	return main_div_sum
+
+def variational_loss(y_true, y_pred):
+	batched_losses = tf.map_fn(lambda x: variational_distance(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
+	return K.mean(tf.stack(batched_losses))
+
 def gmm_nll_loss(covariance_matrix_diag, mix_param_val):
 
 	def gmm_nll_batched(y_true, y_pred):
