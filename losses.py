@@ -41,7 +41,7 @@ def variational_distance(y_true, y_pred):
 	D_bottom = tf.truediv(tf.square(D_bottom), (2 * sigma**2))
 	D_bottom = tf.truediv(tf.exp(-D_bottom), N)
 
-	main_div = tf.log(tf.truediv(tf.reduce_sum(D_top, axis=1), tf.reduce_sum(D_bottom, axis=1)))
+	main_div = tf.log(tf.reduce_sum(D_top, axis=1)) - tf.log(tf.reduce_sum(D_bottom, axis=1))
 	main_div_sum = tf.reduce_sum(main_div) / N
 	return main_div_sum
 
