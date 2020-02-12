@@ -153,7 +153,7 @@ def denormalize(unique_points, reference_points):
 def get_summary_stats(names, data_lists):
 	sum_stats_str = '\n\tMean\tMin\tMax\n'
 	for i in range(len(names)):
-		sum_stats_str += names[i] + ':\t' + str(round(sum(data_lists[i])/len(data_lists[i]), 2)) + '\t' + str(round(min(data_lists[i]), 2)) + '\t' + str(round(max(data_lists[i]), 2)) + '\n'
+		sum_stats_str += names[i] + ':\t' + str(round(sum(data_lists[i])/len(data_lists[i]), 3)) + '\t' + str(round(min(data_lists[i]), 3)) + '\t' + str(round(max(data_lists[i]), 3)) + '\n'
 	return sum_stats_str
 
 if not os.path.exists('./prostate_results/'):
@@ -169,7 +169,6 @@ prostate_data = sio.loadmat('prostate.mat')
 filenames = get_filenames(prostate_data)
 indxs  = get_indices(prostate_data, filenames)
 all_prostates = get_prostate_data(prostate_data, indxs)
-
 max_iters = len(all_prostates) - 2
 
 # All possible patient data permuatations for the testing:
@@ -178,11 +177,12 @@ perms = [[0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1]]
 tags = ['ADC', 'T1', 'T2']
 plot_ax_lim = 1
 
+'''
 d_c_list = []
 d_h_list = []
 d_apex_list = []
 d_base_list = []
-all_time_list = []
+time_list = []
 # CTN - Contour to Contour
 for i in range(0, max_iters, 3):
 
@@ -190,8 +190,6 @@ for i in range(0, max_iters, 3):
 	T1 = all_prostates[i+1]
 	T2 = all_prostates[i+2]
 	patient_data = [ADC, T1, T2]
-
-	time_list = []
 
 	for perm in perms:
 
@@ -227,7 +225,8 @@ for i in range(0, max_iters, 3):
 		pred = model.predict([[np.array(fixed_prostate)],
 							  [np.array(moving_prostate)],
 							  [np.array(moving_prostate)]])
-		time_list.append(round(time.time() - t, 2))
+		t = round(time.time() - t, 3)
+		time_list.append(t)
 		pred_u = np.unique(pred[0], axis=0)
 		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
 
@@ -287,18 +286,18 @@ for i in range(0, max_iters, 3):
 		# Scale the data so we can compute metrics with correct values.
 		pred_dn = denormalize(pred_u, ref_data_mc)
 		fixed_prostate_dn = denormalize(fixed_prostate_u, ref_data_mc)
-		d_c = chamfer(fixed_prostate_dn, pred_dn)
+		d_c = round(chamfer(fixed_prostate_dn, pred_dn), 3)
 		d_c_list.append(d_c)
-		d_h = hausdorff_2way(fixed_prostate_dn, pred_dn)
+		d_h = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
 		d_h_list.append(d_h)
 
 		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
 		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
 		pred_apex_dn = denormalize(pred_apex_u, ref_data_mc)
 		pred_base_dn = denormalize(pred_base_u, ref_data_mc)
-		d_apex = np.linalg.norm(fixed_apex_dn - pred_apex_dn)
+		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
 		d_apex_list.append(d_apex)
-		d_base = np.linalg.norm(fixed_base_dn - pred_base_dn)
+		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
 		d_base_list.append(d_base)
 
 		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ', Apex: ' + str('%.2f') % d_apex + ', Base: ' + str('%.2f') % d_base + ')')
@@ -306,16 +305,18 @@ for i in range(0, max_iters, 3):
 		plt.savefig('./prostate_results/P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
 
-	all_time_list.append(round(sum(time_list)/len(time_list), 2))
-	print(filenames[indxs[i]][0], round(sum(time_list)/len(time_list), 2), round(sum(time_list), 2))
+		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c) + '\t' + str(d_h) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+		f = open('./prostate_results/P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
 
-print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [all_time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
+print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
 
 d_c_list = []
 d_h_list = []
 d_apex_list = []
 d_base_list = []
-all_time_list = []
+time_list = []
 # CTN - Contour&Tz to Contour&Tz
 for i in range(0, max_iters, 3):
 
@@ -323,8 +324,6 @@ for i in range(0, max_iters, 3):
 	T1 = all_prostates[i+1]
 	T2 = all_prostates[i+2]
 	patient_data = [ADC, T1, T2]
-
-	time_list = []
 	
 	for perm in perms:
 
@@ -357,7 +356,8 @@ for i in range(0, max_iters, 3):
 		pred = model.predict([[np.array(fixed)],
 							  [np.array(moving)],
 							  [np.array(moving)]])
-		time_list.append(round(time.time() - t, 2))
+		t = round(time.time() - t, 3)
+		time_list.append(t)
 		pred_u = np.unique(pred[0], axis=0)
 		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
 
@@ -409,18 +409,18 @@ for i in range(0, max_iters, 3):
 		# Scale the data so we can compute metrics with correct values.
 		pred_dn = denormalize(pred_u, ref_data_mc)
 		fixed_dn = denormalize(fixed_u, ref_data_mc)
-		d_c = chamfer(fixed_dn, pred_dn)
+		d_c = round(chamfer(fixed_dn, pred_dn), 3)
 		d_c_list.append(d_c)
-		d_h = hausdorff_2way(fixed_dn, pred_dn)
+		d_h = round(hausdorff_2way(fixed_dn, pred_dn), 3)
 		d_h_list.append(d_h)
 
 		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
 		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
 		pred_apex_dn = denormalize(pred_apex_u, ref_data_mc)
 		pred_base_dn = denormalize(pred_base_u, ref_data_mc)
-		d_apex = np.linalg.norm(fixed_apex_dn - pred_apex_dn)
+		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
 		d_apex_list.append(d_apex)
-		d_base = np.linalg.norm(fixed_base_dn - pred_base_dn)
+		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
 		d_base_list.append(d_base)
 
 		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ', Apex: ' + str('%.2f') % d_apex + ', Base: ' + str('%.2f') % d_base + ')')
@@ -428,16 +428,18 @@ for i in range(0, max_iters, 3):
 		plt.savefig('./prostate_results/PTz2PTz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
 
-	all_time_list.append(round(sum(time_list)/len(time_list), 2))
-	print(filenames[indxs[i]][0], round(sum(time_list)/len(time_list), 2), round(sum(time_list), 2))
+		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c) + '\t' + str(d_h) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+		f = open('./prostate_results/PTz2PTz.txt', 'a')
+		f.write(result_string)
+		f.close()
 
-print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [all_time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
-
+print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
+'''
 d_c_list = []
 d_h_list = []
 d_apex_list = []
 d_base_list = []
-all_time_list = []
+time_list = []
 # CPD - Contour to Contour
 for i in range(0, max_iters, 3):
 
@@ -445,8 +447,6 @@ for i in range(0, max_iters, 3):
 	T1 = all_prostates[i+1]
 	T2 = all_prostates[i+2]
 	patient_data = [ADC, T1, T2]
-
-	time_list = []
 	
 	for perm in perms:
 
@@ -482,7 +482,8 @@ for i in range(0, max_iters, 3):
 		reg = deformable_registration(**{'X':fixed_prostate, 'Y':moving_prostate, 'max_iterations':50})
 		t = time.time()
 		pred, params = reg.register()
-		time_list.append(round(time.time() - t, 2))
+		t = round(time.time() - t, 3)
+		time_list.append(t)
 		pred_u = np.unique(pred, axis=0)
 		x_pred, y_pred, z_pred = get_unique_plot_points(pred)
 
@@ -533,18 +534,18 @@ for i in range(0, max_iters, 3):
 		# Scale the data so we can compute metrics with correct values.
 		pred_dn = denormalize(pred_u, ref_data_mc)
 		fixed_prostate_dn = denormalize(fixed_prostate_u, ref_data_mc)
-		d_c = chamfer(fixed_prostate_dn, pred_dn)
+		d_c = round(chamfer(fixed_prostate_dn, pred_dn), 3)
 		d_c_list.append(d_c)
-		d_h = hausdorff_2way(fixed_prostate_dn, pred_dn)
+		d_h = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
 		d_h_list.append(d_h)
 
 		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
 		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
 		pred_apex_dn = denormalize(pred_apex, ref_data_mc)
 		pred_base_dn = denormalize(pred_base, ref_data_mc)
-		d_apex = np.linalg.norm(fixed_apex_dn - pred_apex_dn)
+		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
 		d_apex_list.append(d_apex)
-		d_base = np.linalg.norm(fixed_base_dn - pred_base_dn)
+		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
 		d_base_list.append(d_base)
 
 		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ', Apex: ' + str('%.2f') % d_apex + ', Base: ' + str('%.2f') % d_base + ')')
@@ -552,16 +553,18 @@ for i in range(0, max_iters, 3):
 		plt.savefig('./prostate_results/CPD-P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
 
-	all_time_list.append(round(sum(time_list)/len(time_list), 2))
-	print(filenames[indxs[i]][0], round(sum(time_list)/len(time_list), 2), round(sum(time_list), 2))
+		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c) + '\t' + str(d_h) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+		f = open('./prostate_results/CPD-P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
 
-print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [all_time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
+print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
 
 d_c_list = []
 d_h_list = []
 d_apex_list = []
 d_base_list = []
-all_time_list = []
+time_list = []
 # CPD - Contour&Tz to Contour&Tz
 for i in range(0, max_iters, 3):
 
@@ -569,8 +572,6 @@ for i in range(0, max_iters, 3):
 	T1 = all_prostates[i+1]
 	T2 = all_prostates[i+2]
 	patient_data = [ADC, T1, T2]
-
-	time_list = []
 	
 	for perm in perms:
 
@@ -602,7 +603,8 @@ for i in range(0, max_iters, 3):
 		reg = deformable_registration(**{'X':fixed, 'Y':moving, 'max_iterations':50})
 		t = time.time()
 		pred, params = reg.register()
-		time_list.append(round(time.time() - t, 2))
+		t = round(time.time() - t, 3)
+		time_list.append(t)
 		pred_u = np.unique(pred, axis=0)
 		x_pred, y_pred, z_pred = get_unique_plot_points(pred)
 
@@ -650,18 +652,18 @@ for i in range(0, max_iters, 3):
 		# Scale the data so we can compute metrics with correct values.
 		pred_dn = denormalize(pred_u, ref_data_mc)
 		fixed_dn = denormalize(fixed_u, ref_data_mc)
-		d_c = chamfer(fixed_dn, pred_dn)
+		d_c = round(chamfer(fixed_dn, pred_dn), 3)
 		d_c_list.append(d_c)
-		d_h = hausdorff_2way(fixed_dn, pred_dn)
+		d_h = round(hausdorff_2way(fixed_dn, pred_dn), 3)
 		d_h_list.append(d_h)
 
 		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
 		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
 		pred_apex_dn = denormalize(pred_apex, ref_data_mc)
 		pred_base_dn = denormalize(pred_base, ref_data_mc)
-		d_apex = np.linalg.norm(fixed_apex_dn - pred_apex_dn)
+		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
 		d_apex_list.append(d_apex)
-		d_base = np.linalg.norm(fixed_base_dn - pred_base_dn)
+		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
 		d_base_list.append(d_base)
 
 		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]) + ' (CD: ' + str('%.2f') % d_c + ', HD: ' + str('%.2f') % d_h + ', Apex: ' + str('%.2f') % d_apex + ', Base: ' + str('%.2f') % d_base + ')')
@@ -669,7 +671,9 @@ for i in range(0, max_iters, 3):
 		plt.savefig('./prostate_results/CPD-PTz2PTz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 		plt.close()
 
-	all_time_list.append(round(sum(time_list)/len(time_list), 2))
-	print(filenames[indxs[i]][0], round(sum(time_list)/len(time_list), 2), round(sum(time_list), 2))
+		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c) + '\t' + str(d_h) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+		f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
+		f.write(result_string)
+		f.close()
 
-print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [all_time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
+print(get_summary_stats(['Time', 'CD', 'HD', 'Apex', 'Base'], [time_list, d_c_list, d_h_list, d_apex_list, d_base_list]))
