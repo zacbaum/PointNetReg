@@ -13,17 +13,17 @@ from datetime import datetime
 from keras import backend as K
 from keras.callbacks import ModelCheckpoint
 from keras.optimizers import Adam
-from losses import chamfer_loss
+from losses import chamfer_loss, variational_loss
 from model import ConditionalTransformerNet
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
 matplotlib.use('AGG')
 os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[2]
 
-from keras.backend.tensorflow_backend import set_session
-config = tf.ConfigProto()
-config.gpu_options.per_process_gpu_memory_fraction  = 0.50
-set_session(tf.Session(config=config))
+#from keras.backend.tensorflow_backend import set_session
+#config = tf.ConfigProto()
+#config.gpu_options.per_process_gpu_memory_fraction  = 0.48
+#set_session(tf.Session(config=config))
 
 def main():
 	train_file = './ModelNet40/ply_data_train.h5'
@@ -33,18 +33,22 @@ def main():
 	if not os.path.exists('./logs' + str(sys.argv[2]) + '/'):
 		os.mkdir('./logs' + str(sys.argv[2]) + '/')
 
-	batch_size = 80
+	batch_size = 16
 	scale = 1
 	load_from_file = False
 
 	loss_name = str(sys.argv[1])
 	loss_func = None
 
-	wandb.init(project = "ctn-chamfer", name = 'd0.0 bn0 gn0 lr1e-4')
+	wandb.init(project="ctn-variational", name='lr1e-3 gn5e-2 bn do0')
 
 	if loss_name == 'chamfer_loss':
 		learning_rate = float(sys.argv[3])
 		loss_func = chamfer_loss
+
+	if loss_name == 'variational_loss':
+		learning_rate = float(sys.argv[3])
+		loss_func = variational_loss
 	
 	if loss_name == 'gmm_nll_loss':
 		learning_rate = float(sys.argv[3])
@@ -58,7 +62,7 @@ def main():
 						  deform=True,
 						  part=0)
 
-	val = DataGenerator(train_file,
+	val = DataGenerator(test_file,
 						batch_size,
 						scale=scale,
 						deform=True,
@@ -86,7 +90,7 @@ def main():
 	num_points = fixed_len
 
 	logdir = "./logs" + str(sys.argv[2]) + "/CTN_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-	checkpointer = ModelCheckpoint(filepath='./logs' + str(sys.argv[2]) + '/CTN_Model_' + datetime.now().strftime("%Y%m%d-%H%M%S") + '.hdf5',
+	checkpointer = ModelCheckpoint(filepath='./logs' + str(sys.argv[2]) + '/CTN_Model_' + datetime.now().strftime("%Y%m%d-%H%M%S") + '.h5',
 								   verbose=0,
 								   save_best_only=True)
 
@@ -96,10 +100,10 @@ def main():
 		from keras.models import load_model
 		from keras.engine.topology import Layer
 		from model import MatMul
-		model = load_model('model-best.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
-		initial_epoch = 128
+		model = load_model('CTN-chamfer_loss.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
+		initial_epoch = 1000
 	else:
-		model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=False, noise=5e-2)
+		model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=True)
 		optimizer = Adam(lr=learning_rate)
 		model.compile(optimizer=optimizer,
 					  loss=loss_func)
@@ -123,7 +127,7 @@ def main():
 
 	model.save('./results' + str(sys.argv[2]) + '/CTN-' + loss_name + '.h5')
 	model.save(os.path.join(wandb.run.dir, "model.h5"))
-	
+
 if __name__ == '__main__':
 
 	main()

@@ -24,27 +24,27 @@ def variational_distance(y_true, y_pred):
 	N = tf.cast(K.int_shape(y_pred)[0], dtype=tf.float32)
 
 	# Part 1 - D(a||a')
-	a = tf.reduce_sum(tf.square(y_pred), axis=1)
+	a = tf.reduce_sum(tf.square(y_true), axis=1)
 	a = tf.reshape(a, [-1, 1])
-	D_top = tf.sqrt(a - 2 * tf.matmul(y_pred, tf.transpose(y_pred)) + tf.transpose(a))
+	D_top = tf.sqrt(a - 2 * tf.matmul(y_true, tf.transpose(y_true)) + tf.transpose(a))
 	# Part 1b - Rest of top
 	D_top = tf.truediv(tf.square(D_top), (2 * sigma**2))
-	D_top = tf.clip_by_value(tf.exp(-D_top), 1e-10, 1e10)
-	D_top = tf.clip_by_value(tf.truediv(D_top, N), 1e-10, 1e10)
+	D_top = tf.clip_by_value(tf.exp(-D_top), 1e-10, 1)
+	D_top = tf.clip_by_value(tf.truediv(D_top, N), 1e-10, 1)
 
 	# Part 2 - D(a||b)
-	a = tf.reduce_sum(tf.square(y_pred), axis=1)
+	a = tf.reduce_sum(tf.square(y_true), axis=1)
 	a = tf.reshape(a, [-1, 1])
-	b = tf.reduce_sum(tf.square(y_true), axis=1)
+	b = tf.reduce_sum(tf.square(y_pred), axis=1)
 	b = tf.reshape(b, [1, -1])
-	D_bottom = tf.sqrt(a - 2 * tf.matmul(y_pred, tf.transpose(y_true)) + b)
+	D_bottom = tf.sqrt(a - 2 * tf.matmul(y_true, tf.transpose(y_pred)) + b)
 	# Part 2b - Rest of bottom
 	D_bottom = tf.truediv(tf.square(D_bottom), (2 * sigma**2))
-	D_bottom = tf.clip_by_value(tf.exp(-D_bottom), 1e-10, 1e10)
-	D_bottom = tf.clip_by_value(tf.truediv(D_bottom, N), 1e-10, 1e10)
+	D_bottom = tf.clip_by_value(tf.exp(-D_bottom), 1e-10, 1)
+	D_bottom = tf.clip_by_value(tf.truediv(D_bottom, N), 1e-10, 1)
 
 	main_div = tf.log(tf.reduce_sum(D_top, axis=1)) - tf.log(tf.reduce_sum(D_bottom, axis=1))
-	return tf.reduce_sum(main_div) / N
+	return K.abs(tf.reduce_sum(main_div) / N)
 
 def variational_loss(y_true, y_pred):
 	batched_losses = tf.map_fn(lambda x: variational_distance(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
