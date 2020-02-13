@@ -168,7 +168,7 @@ f.write(header_string)
 f.close()
 
 # Load the model.
-model = load_model('d0bn0gn0lr1e-3-2000.h5',
+model = load_model('chamfer-gn5e-2lr1e-3-mostdefm-1500.h5',
 				   custom_objects={'MatMul':MatMul},
 				   compile=False)
 
@@ -178,7 +178,6 @@ filenames = get_filenames(prostate_data)
 indxs  = get_indices(prostate_data, filenames)
 all_prostates = get_prostate_data(prostate_data, indxs)
 max_iters = len(all_prostates) - 2
-max_iters = 1
 
 # All possible patient data permuatations for the testing:
 # ADC <- T1, ADC <- T2, T1 <- ADC, T1 <- T2, T2 <- ADC, T2 <- T1
