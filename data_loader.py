@@ -1,15 +1,11 @@
-"""
-Data generator for ModelNet40
-reference: https://github.com/garyli1019/pointnet-keras
-Date: 08/13/2018
-Author: Tianzhong
-"""
 import numpy as np
+import scipy
 import h5py
 import random
 from keras.utils import np_utils
 from keras.utils import Sequence
 import random
+from itertools import product
 
 def ypr_rand(min_deg, max_deg):
     y = [random.uniform(min_deg, max_deg)]
@@ -67,26 +63,75 @@ def get_T(R, d):
 def compute_RBF(x, y, sigma):
 
     n, d = x.shape
-    m, d = y.shape
-
+    m, _ = y.shape
     K = np.zeros([n, m])
-
     for i in range(d):
         K += np.square((x[:, [i]] * np.ones([1, m]) - np.ones([n, 1]) * y[:, i].T))
-
     K = np.exp(np.divide(K, (-2 * (sigma ** 2))))
 
     return K
 
-def compute_TPS(y):
+def compute_RBF_defm(y):
 
     sigma = np.random.normal()
     c = np.random.normal(loc=0, scale=0.1, size=(10, 3))
     x = np.random.uniform(low=-1, high=1, size=(10, 3))
-
     k = compute_RBF(x, y, sigma)
 
     return np.matmul(k.T, c) + y
+
+def compute_EBS_gauss(p, x, sigma, nu):
+
+    n, d = p.shape
+    m, _ = x.shape
+    xd = np.zeros((m, n, 3))
+    for i in range(d):
+        xd[:, :, i] = np.ones((m, 1)) * p[:, i].T - np.reshape(x[:, i], [-1, 1]) * np.ones((1, n))
+    K = np.zeros((m*3, n*3))
+    for row in range(m):
+        for col in range(n):
+            K_r_c = basis_gauss(xd[row, col, :], d, sigma, nu)
+            K[3*row:3*row+3, 3*col:3*col+3] = K_r_c
+    
+    return K
+
+def basis_gauss(y, d, sigma, nu):
+
+    sigma2 = sigma**2
+    r2 = np.matmul(y.T, y)
+    if r2 == 0: r2 = 1e-8
+    r = np.sqrt(r2)
+    rhat = r / (np.sqrt(2) * sigma)
+    c1 = scipy.special.erf(rhat) / r
+    c2 = np.sqrt(2 / np.pi) * sigma * np.exp(-rhat**2) / r2
+    g = ((4 * (1 - nu) - 1) * c1 - c2 + sigma2 * c1 / r2) * np.eye(d) + (c1 / r2 + 3 * c2 / r2 - 3 * sigma2 * c1 / (r2 * r2)) * (y * np.reshape(y, [-1, 1]))
+    
+    return g
+
+def compute_EBS_w(p, q, sigma, nu, lmda=1e-6):
+    
+    n, d = p.shape
+    m, _ = q.shape
+    lmda = lmda * np.eye(n * d)
+    k = compute_EBS_gauss(p, p, sigma, nu)
+    y = np.reshape((q - p).T, [n * d, 1], order='F')
+    L = k + lmda
+    U, S, V = np.linalg.svd(L)
+    w = np.matmul(np.matmul(np.matmul(U, np.diag(np.reciprocal(S))), V), y)
+    
+    return w
+
+def compute_EBS_gauss_defm(x, sigma=0.1, nu=0.1):
+
+    p = x[np.random.randint(x.shape[0], size=10), :]
+    q = p + np.random.uniform(low=-0.1, high=0.1, size=(10, 3))
+    n, d = p.shape
+    m, _ = x.shape
+    w = compute_EBS_w(p, q, sigma, nu)
+    k = compute_EBS_gauss(p, x, sigma, nu)
+
+    return np.reshape(np.matmul(k, w), [d, m]).T + x
+
 
 class DataGenerator(Sequence):
     def __init__(self, file_name, batch_size, scale=1, deform=False, part=0):
@@ -115,11 +160,6 @@ class DataGenerator(Sequence):
                     fixed = f['data'][j]
                     moving = f['data'][j]
                     dims = fixed.shape
-
-                    # Randomly remove half the points.
-                    fixed = self.scale * fixed[np.random.randint(dims[0], size=int(dims[0] * 0.5)), :]
-                    moving = self.scale * moving[np.random.randint(dims[0], size=int(dims[0] * 0.5)), :]
-                    dims = fixed.shape
                     
                     # Normalize between [-1, 1] and mean center.
                     fixed = 2 * (fixed - np.min(fixed)) / np.ptp(fixed) - 1
@@ -130,7 +170,7 @@ class DataGenerator(Sequence):
 
                     # Deform and recenter.
                     if self.deform:
-                        moving_deformed = compute_TPS(moving)
+                        moving_deformed = compute_RBF_defm(moving)
                         moving = moving_deformed - np.mean(moving_deformed, axis=0)
 
                     # Rotate, translate.
@@ -149,8 +189,10 @@ class DataGenerator(Sequence):
                     # Recenter again.
                     moving_moved = moving_moved - np.mean(moving_moved, axis=0)
 
-                    # Take part(s) from point set(s).
+                    # Add some noise to the points.
                     to_reg = moving_moved
+
+                    # Take part(s) from point set(s).
                     if self.part > 0: # Register a part to whole
                         axis = np.random.randint(0, 3)
                         moving_moved = moving_moved[moving_moved[:, axis].argsort()]
@@ -161,9 +203,12 @@ class DataGenerator(Sequence):
                             fixed = fixed[fixed[:, axis].argsort()]
                             fixed = fixed[:int(0.5 * dims[0])]
                             fixed = np.resize(fixed, dims)
+
+                    moving_moved = moving_moved + np.random.normal(0, 5e-2, dims)
                     
                     X1.append(fixed)
                     X2.append(moving_moved)
                     X3.append(to_reg)
                     Y.append(fixed)
                 yield [np.array(X1), np.array(X2), np.array(X3)], np.array(Y)
+                

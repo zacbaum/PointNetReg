@@ -129,3 +129,5 @@ dmypy.json
 *.txt
 *.out
 *.hdf5
+*.mat
+*.xlsx
