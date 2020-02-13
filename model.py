@@ -191,7 +191,7 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 			pass
 	return model
 
-def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, noise=0, multi_gpu=True, verbose=False):
+def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, multi_gpu=True, verbose=False):
 
 	def mean_subtract(input_tensor):
 		import tensorflow as tf
@@ -211,9 +211,7 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 	
 	x = concatenate([point_features_matrix, moving])
 
-	#filters = [1024, 256, 64, dimensions]
 	filters = [1024, 512, 256, 128, 64, dimensions]
-	#filters = [2048, 1024, 1024, 512, 512, 256, 256, 128, 128, 64, 64, dimensions]
 	for num_filters in filters:
 		if num_filters == dimensions:
 			x = Conv1D(num_filters, 1)(x)
@@ -225,8 +223,6 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 				x = BatchNormalization()(x)
 
 	x = add([x, moving])
-	if noise:
-		x = GaussianNoise(noise)(x)
 
 	model = Model(inputs=[fixed, moved, moving], outputs=x)
 
