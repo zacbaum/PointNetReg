@@ -74,8 +74,8 @@ def compute_RBF(x, y, sigma):
 def compute_RBF_defm(y):
 
     sigma = np.random.normal()
-    c = np.random.normal(loc=0, scale=0.1, size=(10, 3))
-    x = np.random.uniform(low=-1, high=1, size=(10, 3))
+    c = np.random.normal(loc=0, scale=0.25, size=(8, 3))
+    x = np.array(list(product(range(-1, 2, 2), repeat=3)))
     k = compute_RBF(x, y, sigma)
 
     return np.matmul(k.T, c) + y
@@ -132,7 +132,6 @@ def compute_EBS_gauss_defm(x, sigma=0.1, nu=0.1):
 
     return np.reshape(np.matmul(k, w), [d, m]).T + x
 
-
 class DataGenerator(Sequence):
     def __init__(self, file_name, batch_size, scale=1, deform=False, part=0):
         self.fie_name = file_name
@@ -178,13 +177,10 @@ class DataGenerator(Sequence):
                     R = q2r(qnorm(e2q(y, p, r)))
                     d = d_rand(self.scale * -1, self.scale * 1)
                     T = get_T(R, d)
-                    moving_moved = []
-                    for point in moving:
-                        point_with_1 = np.append(point, 1)
-                        new_point_with_1 = np.dot(T, point_with_1)
-                        new_point = new_point_with_1[:-1]
-                        moving_moved.append(new_point)
-                    moving_moved = np.array(moving_moved)
+                    
+                    moving_with_ones = np.ones((dims[0], dims[1] + 1))
+                    moving_with_ones[:,:-1] = moving
+                    moving_moved = np.dot(T, moving_with_ones.T).T[:, :-1]
 
                     # Recenter again.
                     moving_moved = moving_moved - np.mean(moving_moved, axis=0)
