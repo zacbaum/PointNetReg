@@ -99,10 +99,6 @@ def PointNet_features(input_len, dimensions=3):
 
 def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform', ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
 
-	def mean_subtract(input_tensor):
-		import tensorflow as tf
-		return tf.map_fn(lambda x: x - tf.reduce_mean(x, axis=0), input_tensor)
-
 	def tps(inputs):
 		return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
 
@@ -136,10 +132,9 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
 	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
-	moving_mean_subtracted = Lambda(mean_subtract, name='Mean_Subtraction')(moving)
 
 	fixed_pointNet = pointNet(fixed)
-	moving_pointNet = pointNet(moving_mean_subtracted)
+	moving_pointNet = pointNet(moving)
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
 
@@ -176,7 +171,7 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 	x = Dense(tps_features * dimensions * 2 + 1, kernel_initializer=ct_initializer)(x)
 	x = BatchNormalization()(x)
 	
-	x = Lambda(tps, name='TPS_Registration')([x, moving_mean_subtracted])
+	x = Lambda(tps, name='TPS_Registration')([x, moving])
 	x = add(x)
 
 	model = Model(inputs=[fixed, moving], outputs=x)
@@ -193,13 +188,8 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 
 def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, multi_gpu=True, verbose=False):
 
-	def mean_subtract(input_tensor):
-		import tensorflow as tf
-		return tf.map_fn(lambda x: x - tf.reduce_mean(x, axis=0), input_tensor)
-
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
 	moved = Input(shape=(num_points, dimensions), name='Moved_Model')
-
 	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
 
 	pointNet = PointNet_features(num_points, dimensions)
