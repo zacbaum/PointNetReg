@@ -74,8 +74,8 @@ def compute_RBF(x, y, sigma):
 def compute_RBF_defm(y):
 
     sigma = np.random.normal()
-    c = np.random.normal(loc=0, scale=0.25, size=(8, 3))
-    x = np.array(list(product(range(-1, 2, 2), repeat=3)))
+    c = np.random.normal(loc=0, scale=0.1, size=(10, 3))
+    x = np.random.uniform(low=-1, high=1, size=(10, 3))
     k = compute_RBF(x, y, sigma)
 
     return np.matmul(k.T, c) + y
@@ -200,7 +200,7 @@ class DataGenerator(Sequence):
                             fixed = fixed[:int(0.5 * dims[0])]
                             fixed = np.resize(fixed, dims)
 
-                    moving_moved = moving_moved + np.random.normal(0, 5e-2, dims)
+                    #moving_moved = moving_moved + np.random.normal(0, 5e-2, dims)
                     
                     X1.append(fixed)
                     X2.append(moving_moved)

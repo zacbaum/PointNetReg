@@ -21,7 +21,7 @@ class Prediction_Plotter(keras.callbacks.Callback):
             pred = self.model.predict(self.X)
 
             assert(self.Y.shape[0] == pred.shape[0])
-            for batch_id in range(0, pred.shape[0], int(pred.shape[0] / 10)):
+            for batch_id in range(0, pred.shape[0], int(pred.shape[0] / 5)):
                 
                 plt.clf()
                 fig = plt.figure()

@@ -7,7 +7,7 @@ import os
 import sys
 import tensorflow as tf
 import wandb
-from callbacks import Prediction_Plotter, PlotLosses
+from callbacks import Prediction_Plotter
 from data_loader import DataGenerator
 from datetime import datetime
 from keras import backend as K
@@ -33,28 +33,21 @@ def main():
 	if not os.path.exists('./logs' + str(sys.argv[2]) + '/'):
 		os.mkdir('./logs' + str(sys.argv[2]) + '/')
 
-	batch_size = 16
+	batch_size = 32
 	scale = 1
 	load_from_file = False
 
 	loss_name = str(sys.argv[1])
 	loss_func = None
+	learning_rate = float(sys.argv[3])
 
-	wandb.init(project="ctn-variational", name='lr1e-3 gn5e-2 bn do0')
+	wandb.init(project="ctn-chamfer", name='d0.0 bn0 lr1e-3')
 
 	if loss_name == 'chamfer_loss':
-		learning_rate = float(sys.argv[3])
 		loss_func = chamfer_loss
 
 	if loss_name == 'variational_loss':
-		learning_rate = float(sys.argv[3])
 		loss_func = variational_loss
-	
-	if loss_name == 'gmm_nll_loss':
-		learning_rate = float(sys.argv[3])
-		covariance_matrix_diag = float(sys.argv[4])
-		mix_param = float(sys.argv[5])
-		loss_func = gmm_nll_loss(covariance_matrix_diag, mix_param)
 
 	train = DataGenerator(train_file,
 						  batch_size,
@@ -94,8 +87,6 @@ def main():
 								   verbose=0,
 								   save_best_only=True)
 
-	LossPlotter = PlotLosses()
-
 	if load_from_file:
 		from keras.models import load_model
 		from keras.engine.topology import Layer
@@ -116,14 +107,14 @@ def main():
 
 	history = model.fit_generator(train.generator(),
 								  steps_per_epoch=num_train // batch_size,
-								  epochs=2500,
+								  epochs=5000,
 								  initial_epoch=initial_epoch,
 								  validation_data=val.generator(),
 								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Val, 
 											 checkpointer,
 											 WandbCallback()],
-								  verbose=2)
+								  verbose=1)
 
 	model.save('./results' + str(sys.argv[2]) + '/CTN-' + loss_name + '.h5')
 	model.save(os.path.join(wandb.run.dir, "model.h5"))

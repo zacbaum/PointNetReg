@@ -25,8 +25,7 @@ def variational_distance(A, B, L, sigma=1.0):
 	# Part 1A - D(a||a')
 	a = tf.reduce_sum(tf.square(B), axis=1)
 	a = tf.reshape(a, [-1, 1])
-	#D_top = tf.sqrt(a - 2 * tf.matmul(B, tf.transpose(B)) + tf.transpose(a))
-	D_top = a - 2 * tf.matmul(B, tf.transpose(B)) + tf.transpose(a)
+	D_top = tf.sqrt(a - 2 * tf.matmul(B, tf.transpose(B)) + tf.transpose(a))
 	# Part 1B - SUM( e^(-D(a||a') / N )
 	D_top = tf.truediv(tf.square(D_top), (2 * sigma**2))
 	D_top = tf.clip_by_value(tf.exp(-D_top), 1e-15, 1e15)
@@ -37,8 +36,7 @@ def variational_distance(A, B, L, sigma=1.0):
 	a = tf.reshape(a, [-1, 1])
 	b = tf.reduce_sum(tf.square(A), axis=1)
 	b = tf.reshape(b, [1, -1])
-	#D_bottom = tf.sqrt(a - 2 * tf.matmul(B, tf.transpose(A)) + b)
-	D_bottom = a - 2 * tf.matmul(B, tf.transpose(A)) + b
+	D_bottom = tf.sqrt(a - 2 * tf.matmul(B, tf.transpose(A)) + b)
 	# Part 2B - SUM( e^(-D(a||b) / N )
 	D_bottom = tf.truediv(tf.square(D_bottom), (2 * sigma**2))
 	D_bottom = tf.clip_by_value(tf.exp(-D_bottom), 1e-15, 1e15)
@@ -84,3 +82,4 @@ def gmm_nll_loss(covariance_matrix_diag, mix_param_val):
 		return K.mean(batched_losses)
 
 	return gmm_nll_batched
+	
