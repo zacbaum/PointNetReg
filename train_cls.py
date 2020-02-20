@@ -23,19 +23,21 @@ os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[2]
 
 #from keras.backend.tensorflow_backend import set_session
 #config = tf.ConfigProto()
-#config.gpu_options.per_process_gpu_memory_fraction  = 0.48
+#config.gpu_options.per_process_gpu_memory_fraction  = 0.45
 #set_session(tf.Session(config=config))
 
 def main():
 	train_file = './ModelNet40/ply_data_train.h5'
+	train = h5py.File(train_file, mode='r')
 	test_file = './ModelNet40/ply_data_test.h5'
+	test = h5py.File(test_file, mode='r')
+
 	if not os.path.exists('./results' + str(sys.argv[2]) + '/'):
 		os.mkdir('./results' + str(sys.argv[2]) + '/')
 	if not os.path.exists('./logs' + str(sys.argv[2]) + '/'):
 		os.mkdir('./logs' + str(sys.argv[2]) + '/')
 
-	batch_size = 32
-	scale = 1
+	batch_size = 64
 	load_from_file = False
 
 	loss_name = str(sys.argv[1])
@@ -50,15 +52,13 @@ def main():
 	if loss_name == 'variational_loss':
 		loss_func = variational_loss
 
-	train = DataGenerator(train_file,
+	train = DataGenerator(train,
 						  batch_size,
-						  scale=scale,
 						  deform=True,
 						  part=0)
 
-	val = DataGenerator(test_file,
+	val = DataGenerator(test,
 						batch_size,
-						scale=scale,
 						deform=True,
 						part=0)
 	val_data = []     # store all the generated data batches
@@ -76,8 +76,7 @@ def main():
 	first_val_Y = val_labels[0]
 	Prediction_Plot_Val = Prediction_Plotter(first_val_X,
 											 first_val_Y, 
-											 './results' + str(sys.argv[2]) + '/' + loss_name + '-val',
-											 scale)
+											 './results' + str(sys.argv[2]) + '/' + loss_name + '-val')
 	fixed_len = val_data[0][0].shape[1]
 	moving_len = val_data[0][1].shape[1]
 	assert (fixed_len == moving_len)

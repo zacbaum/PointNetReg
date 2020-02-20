@@ -96,7 +96,7 @@ def PointNet_features(input_len, dimensions=3):
 
 	return model
 
-def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform', ct_activation='relu', dropout=0., multi_gpu=True, verbose=False):
+def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform', ct_activation='relu', dropout=0., verbose=False):
 
 	def tps(inputs):
 		return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
@@ -185,7 +185,7 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 			pass
 	return model
 
-def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, multi_gpu=True, verbose=True):
+def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
 
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
 	moved = Input(shape=(num_points, dimensions), name='Moved_Model')
@@ -215,9 +215,4 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 	if verbose: model.summary()
 	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
 
-	if multi_gpu:
-		try:
-			model = multi_gpu_model(model)	
-		except:
-			pass
 	return model

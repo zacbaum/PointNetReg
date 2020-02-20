@@ -7,12 +7,11 @@ matplotlib.use('AGG')
 import numpy as np
 
 class Prediction_Plotter(tf.keras.callbacks.Callback):
-    def __init__(self, X, Y, fname_tag, scale=1, debug=False):
+    def __init__(self, X, Y, fname_tag, debug=False):
         self.X = X
         self.Y = Y
         self.fname_tag = fname_tag
         self.debug = debug
-        self.scale = scale
 
     def on_train_begin(self, logs={}):
         pass
@@ -39,9 +38,9 @@ class Prediction_Plotter(tf.keras.callbacks.Callback):
                 ax.scatter(x_true, y_true, z_true, c='y', marker='.')
                 ax.scatter(x_pred, y_pred, z_pred, c='g', marker='.')
 
-                ax.set_xlim([-1 * self.scale, 1 * self.scale])
-                ax.set_ylim([-1 * self.scale, 1 * self.scale])
-                ax.set_zlim([-1 * self.scale, 1 * self.scale])
+                ax.set_xlim([-1, 1])
+                ax.set_ylim([-1, 1])
+                ax.set_zlim([-1, 1])
 
                 plt.show()
                 plt.savefig(str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
