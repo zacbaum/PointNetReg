@@ -65,7 +65,7 @@ def main():
 	val_labels = []   # store all the generated ground_truth batches
 	max_iter = 1      # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
 	i = 0
-	for d, l in val.generator():
+	for d, l in val:
 		val_data.append(d)
 		val_labels.append(l)
 		i += 1
@@ -105,16 +105,19 @@ def main():
 	f = h5py.File(test_file, mode='r')
 	num_val = f['data'].shape[0]
 
-	history = model.fit_generator(train.generator(),
+	history = model.fit_generator(train,
 								  steps_per_epoch=num_train // batch_size,
-								  epochs=5000,
+								  epochs=1000,
 								  initial_epoch=initial_epoch,
-								  validation_data=val.generator(),
+								  validation_data=val,
 								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Val, 
 											 checkpointer],
 											 #WandbCallback()],
-								  verbose=1)
+								  verbose=1,
+								  use_multiprocessing=True,
+								  workers=16,
+								  max_queue_size=100)
 
 	model.save('./results' + str(sys.argv[2]) + '/CTN-' + loss_name + '.h5')
 	model.save(os.path.join(wandb.run.dir, "model.h5"))
