@@ -2,8 +2,8 @@ import numpy as np
 import scipy
 import h5py
 import random
-from keras.utils import np_utils
-from keras.utils import Sequence
+import tensorflow as tf
+from tensorflow.keras.utils import Sequence
 import random
 from itertools import product
 

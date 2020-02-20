@@ -1,11 +1,12 @@
 from mpl_toolkits.mplot3d import Axes3D
-import keras
+import tensorflow as tf
+import tensorflow.keras
 import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('AGG')
 import numpy as np
 
-class Prediction_Plotter(keras.callbacks.Callback):
+class Prediction_Plotter(tf.keras.callbacks.Callback):
     def __init__(self, X, Y, fname_tag, scale=1, debug=False):
         self.X = X
         self.Y = Y
@@ -86,7 +87,7 @@ class Prediction_Plotter(keras.callbacks.Callback):
                     plt.savefig('./results/MOVE_PRED-' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
                     plt.close()
 
-class PlotLosses(keras.callbacks.Callback):
+class PlotLosses(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
         self.i = 0
         self.x = []

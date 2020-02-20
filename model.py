@@ -1,12 +1,11 @@
-from keras.layers import Conv1D, MaxPooling1D, Dropout, Input, BatchNormalization, Dense, RepeatVector, GaussianNoise
-from keras.layers import Reshape, Lambda, concatenate, add
-from keras.models import Model
-from keras.engine.topology import Layer
-from keras.utils import multi_gpu_model, plot_model
+import tensorflow as tf
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Dropout, Input, BatchNormalization, Dense, RepeatVector, GaussianNoise, Reshape, Lambda, concatenate, add
+from tensorflow.keras.layers import Layer
+from tensorflow.keras.models import Model
+from tensorflow.keras.utils import multi_gpu_model, plot_model
 from keras import backend as K
 import numpy as np
-import tensorflow as tf
-import keras
+import tensorflow.keras
 
 class MatMul(Layer):
 
@@ -91,7 +90,7 @@ def PointNet_features(input_len, dimensions=3):
 
 	# global feature
 	global_feature = MaxPooling1D(pool_size=input_len)(g)
-	global_feature = Reshape((-1,))(global_feature)
+	global_feature = Reshape((1024,))(global_feature)
 
 	model = Model(inputs=input_points, outputs=global_feature, name='PointNet')
 
@@ -186,7 +185,7 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 			pass
 	return model
 
-def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, multi_gpu=True, verbose=False):
+def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, multi_gpu=True, verbose=True):
 
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
 	moved = Input(shape=(num_points, dimensions), name='Moved_Model')
@@ -201,17 +200,14 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 	
 	x = concatenate([point_features_matrix, moving])
 
-	filters = [1024, 512, 256, 128, 64, dimensions]
+	filters = [1024, 512, 256, 128, 64]
 	for num_filters in filters:
-		if num_filters == dimensions:
-			x = Conv1D(num_filters, 1)(x)
-		else:
-			x = Conv1D(num_filters, 1, activation=ct_activation)(x)
-			if dropout:
-				x = Dropout(dropout)(x)
-			if batch_norm:
-				x = BatchNormalization()(x)
-
+		x = Conv1D(num_filters, 1, activation=ct_activation)(x)
+		if dropout:
+			x = Dropout(dropout)(x)
+		if batch_norm:
+			x = BatchNormalization()(x)
+	x = Conv1D(dimensions, 1)(x)
 	x = add([x, moving])
 
 	model = Model(inputs=[fixed, moved, moving], outputs=x)

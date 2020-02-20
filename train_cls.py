@@ -1,5 +1,6 @@
 import h5py
-import keras
+import tensorflow as tf
+import tensorflow.keras
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -11,8 +12,8 @@ from callbacks import Prediction_Plotter
 from data_loader import DataGenerator
 from datetime import datetime
 from keras import backend as K
-from keras.callbacks import ModelCheckpoint
-from keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.optimizers import Adam
 from losses import chamfer_loss, variational_loss
 from model import ConditionalTransformerNet
 from mpl_toolkits.mplot3d import Axes3D
@@ -41,7 +42,7 @@ def main():
 	loss_func = None
 	learning_rate = float(sys.argv[3])
 
-	wandb.init(project="ctn-chamfer", name='d0.0 bn0 lr1e-3')
+	#wandb.init(project="ctn-chamfer", name='d0.0 bn0 lr1e-3')
 
 	if loss_name == 'chamfer_loss':
 		loss_func = chamfer_loss
@@ -88,13 +89,13 @@ def main():
 								   save_best_only=True)
 
 	if load_from_file:
-		from keras.models import load_model
-		from keras.engine.topology import Layer
+		from tensorflow.keras.models import load_model
+		from tensorflow.keras.layers import Layer
 		from model import MatMul
 		model = load_model('CTN-chamfer_loss.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
 		initial_epoch = 1000
 	else:
-		model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=True)
+		model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=False)
 		optimizer = Adam(lr=learning_rate)
 		model.compile(optimizer=optimizer,
 					  loss=loss_func)
@@ -112,8 +113,8 @@ def main():
 								  validation_data=val.generator(),
 								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Val, 
-											 checkpointer,
-											 WandbCallback()],
+											 checkpointer],
+											 #WandbCallback()],
 								  verbose=1)
 
 	model.save('./results' + str(sys.argv[2]) + '/CTN-' + loss_name + '.h5')
