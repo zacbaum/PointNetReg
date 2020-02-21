@@ -15,11 +15,18 @@ from keras import backend as K
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 from losses import chamfer_loss, variational_loss
-from model import ConditionalTransformerNet
+from model import ConditionalTransformerNet, MatMul
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
 matplotlib.use('AGG')
 os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[2]
+
+if int(tf.VERSION[0]) >= 2:
+	from tensorflow.keras.models import load_model
+	from tensorflow.keras.layers import Layer
+else:
+	from keras.models import load_model
+	from keras.engine.topology import Layer
 
 #from keras.backend.tensorflow_backend import set_session
 #config = tf.ConfigProto()
@@ -88,9 +95,6 @@ def main():
 								   save_best_only=True)
 
 	if load_from_file:
-		from tensorflow.keras.models import load_model
-		from tensorflow.keras.layers import Layer
-		from model import MatMul
 		model = load_model('CTN-chamfer_loss.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
 		initial_epoch = 1000
 	else:

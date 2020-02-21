@@ -11,9 +11,14 @@ import os
 import re
 os.environ["CUDA_VISIBLE_DEVICES"]='CPU'
 import time
-from keras.models import load_model
-from keras.engine.topology import Layer
 from cpd import deformable_registration, gaussian_kernel
+
+if int(tf.VERSION[0]) >= 2:
+	from tensorflow.keras.models import load_model
+	from tensorflow.keras.layers import Layer
+else:
+	from keras.models import load_model
+	from keras.engine.topology import Layer
 
 class MatMul(Layer):
 
@@ -80,7 +85,7 @@ def get_indices(data, filenames):
 					indxs.append(i + 2)
 	return indxs
 
-def get_prostate_data(data, indxs):
+def get_prostate_data(data, indxs, dims=[2048,3]):
 	all_prostates = []
 	for indx in indxs:
 		prostate = data['Meshes'][0][indx] # Gets to the list of structs.
@@ -150,523 +155,526 @@ def denormalize(unique_points, reference_points):
 	unique_points_dn = 0.5 * ((unique_points * np.ptp(reference_points)) + (2 * np.min(reference_points)) + np.ptp(reference_points))
 	return unique_points_dn
 
-if not os.path.exists('./prostate_results/'):
-	os.mkdir('./prostate_results/')
-
-header_string = 'P_ID\tMOVING\tFIXED\tTIME\tDC_P\tDH_P\tDC_Tz\tDH_Tz\tD_Apex\tD_Base\n'
-f = open('./prostate_results/P2P.txt', 'a')
-f.write(header_string)
-f.close()
-f = open('./prostate_results/PTz2PTz.txt', 'a')
-f.write(header_string)
-f.close()
-f = open('./prostate_results/CPD-P2P.txt', 'a')
-f.write(header_string)
-f.close()
-f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
-f.write(header_string)
-f.close()
-
-# Load the model.
-model = load_model('chamfer-gn5e-2lr1e-3-mostdefm-1500.h5',
-				   custom_objects={'MatMul':MatMul},
-				   compile=False)
-
-dims = [2048, 3]
-prostate_data = sio.loadmat('prostate.mat')
-filenames = get_filenames(prostate_data)
-indxs  = get_indices(prostate_data, filenames)
-all_prostates = get_prostate_data(prostate_data, indxs)
-max_iters = len(all_prostates) - 2
-
-# All possible patient data permuatations for the testing:
-# ADC <- T1, ADC <- T2, T1 <- ADC, T1 <- T2, T2 <- ADC, T2 <- T1
-perms = [[0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1]]
-tags = ['ADC', 'T1', 'T2']
-
-# CTN - Contour to Contour
-for i in range(0, max_iters, 3):
-
-	ADC = all_prostates[i]
-	T1 = all_prostates[i+1]
-	T2 = all_prostates[i+2]
-	patient_data = [ADC, T1, T2]
-
-	for perm in perms:
-
-		# Fixed Prostate
-		fixed_prostate = patient_data[perm[0]][0]
-		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
-		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
-		# Fixed Tz
-		fixed_transition_zone = patient_data[perm[0]][1]
-		fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
-		x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
-		# Fixed Apex & Base
-		fixed_apex = patient_data[perm[0]][5]
-		fixed_apex_u = np.unique(fixed_apex, axis=0)
-		x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
-		fixed_base = patient_data[perm[0]][6]
-		fixed_base_u = np.unique(fixed_base, axis=0)
-		x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
-
-		# Moving Prostate
-		moving_prostate = patient_data[perm[1]][0]
-		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate)
-		# Moving Tz
-		moving_transition_zone = patient_data[perm[1]][1]
-		x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
-		# Moving Apex & Base
-		moving_apex = patient_data[perm[1]][5]
-		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
-		moving_base = patient_data[perm[1]][6]
-		x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
-
-		# Moving2Fixed Prostate
-		t = time.time()
-		pred = model.predict([[np.array(fixed_prostate)],
-							  [np.array(moving_prostate)],
-							  [np.array(moving_prostate)]])
-		t = round(time.time() - t, 3)
-		pred_u = np.unique(pred[0], axis=0)
-		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
-		# Moving2Fixed Tz
-		pred_transition_zone = model.predict([[np.array(fixed_prostate)],
-								   			  [np.array(moving_prostate)],
-								   			  [np.array(moving_transition_zone)]])
-		pred_transition_zone_u = np.unique(pred_transition_zone[0], axis=0)
-		x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone[0])
-		# Moving2Fixed Apex & Base
-		pred_apex = model.predict([[np.array(fixed_prostate)],
-								   [np.array(moving_prostate)],
-								   [np.array(moving_apex)]])
-		pred_apex_u = np.unique(pred_apex[0], axis=0)
-		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
-		pred_base = model.predict([[np.array(fixed_prostate)],
-								   [np.array(moving_prostate)],
-								   [np.array(moving_base)]])
-		pred_base_u = np.unique(pred_base[0], axis=0)
-		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
-
-		fig = plt.figure()
-		ax0 = fig.add_subplot(221, projection='3d')
-		ax0.set_title('Fixed P & Fixed Tz')
-		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
-		ax0.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
-		ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
-		ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
-
-		ax1 = fig.add_subplot(222, projection='3d')
-		ax1.set_title('Moving P & Moving Tz')
-		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
-		ax1.scatter(x_mtz, y_mtz, z_mtz, c='b', marker='.', alpha=0.2)
-		ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
-		ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
-
-		ax2 = fig.add_subplot(223, projection='3d')
-		ax2.set_title('Fixed P & Moving2Fixed P')
-		ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
-		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
-		ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
-		ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
-		ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
-		ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
-
-		ax3 = fig.add_subplot(224, projection='3d')
-		ax3.set_title('Fixed Tz & Moving2Fixed Tz')
-		ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
-		ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
-
-		set_plot_ax_lims([ax0, ax1, ax2, ax3])
-
-		ref_data = patient_data[perm[0]][7]
-		ref_data_mc = ref_data - np.mean(ref_data, axis=0)
-
-		# Scale the data so we can compute metrics with correct values.
-		pred_dn = denormalize(pred_u, ref_data_mc)
-		fixed_prostate_dn = denormalize(fixed_prostate_u, ref_data_mc)
-		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
-		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
-
-		pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
-		fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
-		d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-		d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-
-		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
-		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
-		pred_apex_dn = denormalize(pred_apex_u, ref_data_mc)
-		pred_base_dn = denormalize(pred_base_u, ref_data_mc)
-		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
-		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
-
-		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
-		plt.show()
-		plt.savefig('./prostate_results/P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
-		plt.close()
-
-		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
-		f = open('./prostate_results/P2P.txt', 'a')
-		f.write(result_string)
-		f.close()
-
-# CTN - Contour&Tz to Contour&Tz
-for i in range(0, max_iters, 3):
-
-	ADC = all_prostates[i]
-	T1 = all_prostates[i+1]
-	T2 = all_prostates[i+2]
-	patient_data = [ADC, T1, T2]
-	
-	for perm in perms:
-
-		# Fixed Prostate & Tz
-		fixed = np.resize(np.vstack((np.unique(patient_data[perm[0]][0], axis=0), np.unique(patient_data[perm[0]][1], axis=0))), dims)
-		fixed_u = np.unique(fixed, axis=0)
-		x_fptz, y_fptz, z_fptz = get_unique_plot_points(fixed)
-		# Fixed Tz
-		fixed_transition_zone = patient_data[perm[0]][1]
-		fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
-		x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
-		# Fixed Apex & Base
-		fixed_apex = patient_data[perm[0]][5]
-		fixed_apex_u = np.unique(fixed_apex, axis=0)
-		x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
-		fixed_base = patient_data[perm[0]][6]
-		fixed_base_u = np.unique(fixed_base, axis=0)
-		x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
-
-		# Moving Prostate & Tz
-		moving = np.resize(np.vstack((np.unique(patient_data[perm[1]][0], axis=0), np.unique(patient_data[perm[1]][1], axis=0))), dims)
-		moving_u = np.unique(moving, axis=0)
-		x_mptz, y_mptz, z_mptz = get_unique_plot_points(moving)
-		# Moving Tz
-		moving_transition_zone = patient_data[perm[1]][1]
-		x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
-		# Moving Apex & Base
-		moving_apex = patient_data[perm[1]][5]
-		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
-		moving_base = patient_data[perm[1]][6]
-		x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
-
-		# Moving2Fixed Prostate & Tz
-		t = time.time()
-		pred = model.predict([[np.array(fixed)],
-							  [np.array(moving)],
-							  [np.array(moving)]])
-		t = round(time.time() - t, 3)
-		pred_u = np.unique(pred[0], axis=0)
-		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
-		# Moving2Fixed Tz
-		pred_transition_zone = model.predict([[np.array(fixed)],
-								   			  [np.array(moving)],
-								   			  [np.array(moving_transition_zone)]])
-		pred_transition_zone_u = np.unique(pred_transition_zone[0], axis=0)
-		x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone[0])
-		# Moving2Fixed Apex & Base
-		pred_apex = model.predict([[np.array(fixed)],
-								   [np.array(moving)],
-								   [np.array(moving_apex)]])
-		pred_apex_u = np.unique(pred_apex[0], axis=0)
-		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
-		pred_base = model.predict([[np.array(fixed)],
-								   [np.array(moving)],
-								   [np.array(moving_base)]])
-		pred_base_u = np.unique(pred_base[0], axis=0)
-		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
-
-		fig = plt.figure()
-		ax0 = fig.add_subplot(221, projection='3d')
-		ax0.set_title('Fixed P & Tz')
-		ax0.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
-		ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
-		ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
-
-		ax1 = fig.add_subplot(222, projection='3d')
-		ax1.set_title('Moving P & Tz')
-		ax1.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.2)
-		ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
-		ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
-
-		ax2 = fig.add_subplot(223, projection='3d')
-		ax2.set_title('Moving2Fixed P & Tz')
-		ax2.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
-		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
-		ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
-		ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
-		ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
-		ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
-
-		ax3 = fig.add_subplot(224, projection='3d')
-		ax3.set_title('Fixed Tz & Moving2Fixed Tz')
-		ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
-		ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
-
-		set_plot_ax_lims([ax0, ax1, ax2, ax3])
-
-		ref_data = patient_data[perm[0]][7]
-		ref_data_mc = ref_data - np.mean(ref_data, axis=0)
-
-		# Scale the data so we can compute metrics with correct values.
-		pred_dn = denormalize(pred_u, ref_data_mc)
-		fixed_dn = denormalize(fixed_u, ref_data_mc)
-		d_c_p = round(chamfer(fixed_dn, pred_dn), 3)
-		d_h_p = round(hausdorff_2way(fixed_dn, pred_dn), 3)
-
-		pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
-		fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
-		d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-		d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-
-		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
-		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
-		pred_apex_dn = denormalize(pred_apex_u, ref_data_mc)
-		pred_base_dn = denormalize(pred_base_u, ref_data_mc)
-		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
-		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
-
-		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
-		plt.savefig('./prostate_results/PTz2PTz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
-		plt.close()
-
-		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
-		f = open('./prostate_results/PTz2PTz.txt', 'a')
-		f.write(result_string)
-		f.close()
-
-# CPD - Contour to Contour
-for i in range(0, max_iters, 3):
-
-	ADC = all_prostates[i]
-	T1 = all_prostates[i+1]
-	T2 = all_prostates[i+2]
-	patient_data = [ADC, T1, T2]
-	
-	for perm in perms:
-
-		# Fixed Prostate
-		fixed_prostate = patient_data[perm[0]][0]
-		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
-		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
-		# Fixed Tz
-		fixed_transition_zone = patient_data[perm[0]][1]
-		fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
-		x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
-		# Fixed Apex & Base
-		fixed_apex = patient_data[perm[0]][5]
-		fixed_apex_u = np.unique(fixed_apex, axis=0)
-		x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
-		fixed_base = patient_data[perm[0]][6]
-		fixed_base_u = np.unique(fixed_base, axis=0)
-		x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
-
-		# Moving Prostate
-		moving_prostate = patient_data[perm[1]][0]
-		moving_prostate_u = np.unique(moving_prostate, axis=0)
-		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate)
-		# Moving Tz
-		moving_transition_zone = patient_data[perm[1]][1]
-		x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
-		# Moving Apex & Base
-		moving_apex = patient_data[perm[1]][5]
-		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
-		moving_base = patient_data[perm[1]][6]
-		x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
-
-		# Moving2Fixed Prostate
-		reg = deformable_registration(**{'X':fixed_prostate, 'Y':moving_prostate, 'max_iterations':50})
-		t = time.time()
-		pred, params = reg.register()
-		t = round(time.time() - t, 3)
-		pred_u = np.unique(pred, axis=0)
-		x_pred, y_pred, z_pred = get_unique_plot_points(pred)
-		# Moving2Fixed Tz
-		moving_transition_zone_u = np.unique(moving_transition_zone, axis=0)
-		pred_transition_zone = moving_transition_zone_u + np.dot(gaussian_kernel(moving_prostate, moving_transition_zone_u), params[1])
-		pred_transition_zone_u = np.unique(pred_transition_zone, axis=0)
-		x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone)
-		# Moving2Fixed Apex & Base
-		moving_apex_u = np.unique(moving_apex, axis=0)
-		pred_apex = moving_apex_u + np.dot(gaussian_kernel(moving_prostate, moving_apex_u), params[1])
-		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex)
-		moving_base_u = np.unique(moving_base, axis=0)
-		pred_base = moving_base_u + np.dot(gaussian_kernel(moving_prostate, moving_base_u), params[1])
-		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base)
-
-		fig = plt.figure()
-		ax0 = fig.add_subplot(221, projection='3d')
-		ax0.set_title('Fixed P & Fixed Tz')
-		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
-		ax0.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
-		ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
-		ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
-
-		ax1 = fig.add_subplot(222, projection='3d')
-		ax1.set_title('Moving P & Moving Tz')
-		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
-		ax1.scatter(x_mtz, y_mtz, z_mtz, c='b', marker='.', alpha=0.2)
-		ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
-		ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
-
-		ax2 = fig.add_subplot(223, projection='3d')
-		ax2.set_title('Fixed P & Moving2Fixed P')
-		ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
-		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
-		ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
-		ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
-		ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
-		ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
-
-		ax3 = fig.add_subplot(224, projection='3d')
-		ax3.set_title('Fixed Tz & Moving2Fixed Tz')
-		ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
-		ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
-
-		set_plot_ax_lims([ax0, ax1, ax2, ax3])
-
-		ref_data = patient_data[perm[0]][7]
-		ref_data_mc = ref_data - np.mean(ref_data, axis=0)
-
-		# Scale the data so we can compute metrics with correct values.
-		pred_dn = denormalize(pred_u, ref_data_mc)
-		fixed_prostate_dn = denormalize(fixed_prostate_u, ref_data_mc)
-		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
-		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
-
-		pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
-		fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
-		d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-		d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-
-		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
-		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
-		pred_apex_dn = denormalize(pred_apex, ref_data_mc)
-		pred_base_dn = denormalize(pred_base, ref_data_mc)
-		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
-		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
-
-		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
-		plt.show()
-		plt.savefig('./prostate_results/CPD-P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
-		plt.close()
-
-		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
-		f = open('./prostate_results/CPD-P2P.txt', 'a')
-		f.write(result_string)
-		f.close()
-
-# CPD - Contour&Tz to Contour&Tz
-for i in range(0, max_iters, 3):
-
-	ADC = all_prostates[i]
-	T1 = all_prostates[i+1]
-	T2 = all_prostates[i+2]
-	patient_data = [ADC, T1, T2]
-	
-	for perm in perms:
-
-		# Fixed Prostate & Tz
-		fixed = np.resize(np.vstack((np.unique(patient_data[perm[0]][0], axis=0), np.unique(patient_data[perm[0]][1], axis=0))), dims)
-		fixed_u = np.unique(fixed, axis=0)
-		x_fptz, y_fptz, z_fptz = get_unique_plot_points(fixed)
-		# Fixed Tz
-		fixed_transition_zone = patient_data[perm[0]][1]
-		fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
-		x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
-		# Fixed Apex & Base
-		fixed_apex = patient_data[perm[0]][5]
-		fixed_apex_u = np.unique(fixed_apex, axis=0)
-		x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
-		fixed_base = patient_data[perm[0]][6]
-		fixed_base_u = np.unique(fixed_base, axis=0)
-		x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
-
-		# Moving Prostate & Tz
-		moving = np.resize(np.vstack((np.unique(patient_data[perm[1]][0], axis=0), np.unique(patient_data[perm[1]][1], axis=0))), dims)
-		moving_u = np.unique(moving, axis=0)
-		x_mptz, y_mptz, z_mptz = get_unique_plot_points(moving)
-		# Moving Tz
-		moving_transition_zone = patient_data[perm[1]][1]
-		x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
-		# Moving Apex & Base
-		moving_apex = patient_data[perm[1]][5]
-		x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
-		moving_base = patient_data[perm[1]][6]
-		x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
-
-		# Moving2Fixed Prostate & Tz
-		reg = deformable_registration(**{'X':fixed, 'Y':moving, 'max_iterations':50})
-		t = time.time()
-		pred, params = reg.register()
-		t = round(time.time() - t, 3)
-		pred_u = np.unique(pred, axis=0)
-		x_pred, y_pred, z_pred = get_unique_plot_points(pred)
-		# Moving2Fixed Tz
-		moving_transition_zone_u = np.unique(moving_transition_zone, axis=0)
-		pred_transition_zone = moving_transition_zone_u + np.dot(gaussian_kernel(moving, moving_transition_zone_u), params[1])
-		pred_transition_zone_u = np.unique(pred_transition_zone, axis=0)
-		x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone)
-		# Moving2Fixed Apex & Base
-		moving_apex_u = np.unique(moving_apex, axis=0)
-		pred_apex = moving_apex_u + np.dot(gaussian_kernel(moving, moving_apex_u), params[1])
-		x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex)
-		moving_base_u = np.unique(moving_base, axis=0)
-		pred_base = moving_base_u + np.dot(gaussian_kernel(moving, moving_base_u), params[1])
-		x_pb, y_pb, z_pb = get_unique_plot_points(pred_base)
-
-		fig = plt.figure()
-		ax0 = fig.add_subplot(221, projection='3d')
-		ax0.set_title('Fixed P & Tz')
-		ax0.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
-		ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
-		ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
-
-		ax1 = fig.add_subplot(222, projection='3d')
-		ax1.set_title('Moving P & Tz')
-		ax1.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.2)
-		ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
-		ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
-
-		ax2 = fig.add_subplot(223, projection='3d')
-		ax2.set_title('Moving2Fixed P & Tz')
-		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
-		ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
-		ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
-
-		ax3 = fig.add_subplot(224, projection='3d')
-		ax3.set_title('Fixed Tz & Moving2Fixed Tz')
-		ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
-		ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
-
-		set_plot_ax_lims([ax0, ax1, ax2, ax3])
-
-		ref_data = patient_data[perm[0]][7]
-		ref_data_mc = ref_data - np.mean(ref_data, axis=0)
-
-		# Scale the data so we can compute metrics with correct values.
-		pred_dn = denormalize(pred_u, ref_data_mc)
-		fixed_dn = denormalize(fixed_u, ref_data_mc)
-		d_c_p = round(chamfer(fixed_dn, pred_dn), 3)
-		d_h_p = round(hausdorff_2way(fixed_dn, pred_dn), 3)
-
-		pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
-		fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
-		d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-		d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
-
-		fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
-		fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
-		pred_apex_dn = denormalize(pred_apex, ref_data_mc)
-		pred_base_dn = denormalize(pred_base, ref_data_mc)
-		d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
-		d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
-
-		fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
-		plt.show()
-		plt.savefig('./prostate_results/CPD-PTz2PTz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
-		plt.close()
-
-		result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
-		f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
-		f.write(result_string)
-		f.close()
+def predict_file(fname):
+	if not os.path.exists('./prostate_results-' + fname + '/'):
+		os.mkdir('./prostate_results-' + fname + '/')
+
+	header_string = 'P_ID\tMOVING\tFIXED\tTIME\tDC_P\tDH_P\tDC_Tz\tDH_Tz\tD_Apex\tD_Base\n'
+	f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+	f = open('./prostate_results-' + fname + '/PTz2PTz.txt', 'a')
+	f.write(header_string)
+	f.close()
+	f = open('./prostate_results/CPD-P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+	f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
+	f.write(header_string)
+	f.close()
+
+	# Load the model.
+	model = load_model(fname + '.h5',
+				   	   custom_objects={'MatMul':MatMul},
+				       compile=False)
+
+	dims = [2048, 3]
+	prostate_data = sio.loadmat('prostate.mat')
+	filenames = get_filenames(prostate_data)
+	indxs  = get_indices(prostate_data, filenames)
+	all_prostates = get_prostate_data(prostate_data, indxs)
+	max_iters = len(all_prostates) - 2
+
+	# All possible patient data permuatations for the testing:
+	# ADC <- T1, ADC <- T2, T1 <- ADC, T1 <- T2, T2 <- ADC, T2 <- T1
+	perms = [[0, 1], [0, 2], [1, 0], [1, 2], [2, 0], [2, 1]]
+	tags = ['ADC', 'T1', 'T2']
+
+	# CTN - Contour to Contour
+	for i in range(0, max_iters, 3):
+
+		ADC = all_prostates[i]
+		T1 = all_prostates[i+1]
+		T2 = all_prostates[i+2]
+		patient_data = [ADC, T1, T2]
+
+		for perm in perms:
+
+			# Fixed Prostate
+			fixed_prostate = patient_data[perm[0]][0]
+			fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+			x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
+			# Fixed Tz
+			fixed_transition_zone = patient_data[perm[0]][1]
+			fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
+			x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
+			# Fixed Apex & Base
+			fixed_apex = patient_data[perm[0]][5]
+			fixed_apex_u = np.unique(fixed_apex, axis=0)
+			x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
+			fixed_base = patient_data[perm[0]][6]
+			fixed_base_u = np.unique(fixed_base, axis=0)
+			x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
+
+			# Moving Prostate
+			moving_prostate = patient_data[perm[1]][0]
+			x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate)
+			# Moving Tz
+			moving_transition_zone = patient_data[perm[1]][1]
+			x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
+			# Moving Apex & Base
+			moving_apex = patient_data[perm[1]][5]
+			x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
+			moving_base = patient_data[perm[1]][6]
+			x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
+
+			# Moving2Fixed Prostate
+			t = time.time()
+			pred = model.predict([[np.array(fixed_prostate)],
+								  [np.array(moving_prostate)],
+								  [np.array(moving_prostate)]])
+			t = round(time.time() - t, 3)
+			pred_u = np.unique(pred[0], axis=0)
+			x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
+			# Moving2Fixed Tz
+			pred_transition_zone = model.predict([[np.array(fixed_prostate)],
+									   			  [np.array(moving_prostate)],
+									   			  [np.array(moving_transition_zone)]])
+			pred_transition_zone_u = np.unique(pred_transition_zone[0], axis=0)
+			x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone[0])
+			# Moving2Fixed Apex & Base
+			pred_apex = model.predict([[np.array(fixed_prostate)],
+									   [np.array(moving_prostate)],
+									   [np.array(moving_apex)]])
+			pred_apex_u = np.unique(pred_apex[0], axis=0)
+			x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
+			pred_base = model.predict([[np.array(fixed_prostate)],
+									   [np.array(moving_prostate)],
+									   [np.array(moving_base)]])
+			pred_base_u = np.unique(pred_base[0], axis=0)
+			x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
+
+			fig = plt.figure()
+			ax0 = fig.add_subplot(221, projection='3d')
+			ax0.set_title('Fixed P & Fixed Tz')
+			ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+			ax0.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
+			ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+			ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+
+			ax1 = fig.add_subplot(222, projection='3d')
+			ax1.set_title('Moving P & Moving Tz')
+			ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+			ax1.scatter(x_mtz, y_mtz, z_mtz, c='b', marker='.', alpha=0.2)
+			ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
+			ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
+
+			ax2 = fig.add_subplot(223, projection='3d')
+			ax2.set_title('Fixed P & Moving2Fixed P')
+			ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+			ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+			ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+			ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+			ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+			ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
+
+			ax3 = fig.add_subplot(224, projection='3d')
+			ax3.set_title('Fixed Tz & Moving2Fixed Tz')
+			ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
+			ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
+
+			set_plot_ax_lims([ax0, ax1, ax2, ax3])
+
+			ref_data = patient_data[perm[0]][7]
+			ref_data_mc = ref_data - np.mean(ref_data, axis=0)
+
+			# Scale the data so we can compute metrics with correct values.
+			pred_dn = denormalize(pred_u, ref_data_mc)
+			fixed_prostate_dn = denormalize(fixed_prostate_u, ref_data_mc)
+			d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+			d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+			pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
+			fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
+			d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+			d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+
+			fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
+			fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
+			pred_apex_dn = denormalize(pred_apex_u, ref_data_mc)
+			pred_base_dn = denormalize(pred_base_u, ref_data_mc)
+			d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
+			d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
+
+			fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
+			plt.show()
+			plt.savefig('./prostate_results-' + fname + '/P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
+			plt.close()
+
+			result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+			f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+			f.write(result_string)
+			f.close()
+
+	# CTN - Contour&Tz to Contour&Tz
+	for i in range(0, max_iters, 3):
+
+		ADC = all_prostates[i]
+		T1 = all_prostates[i+1]
+		T2 = all_prostates[i+2]
+		patient_data = [ADC, T1, T2]
+		
+		for perm in perms:
+
+			# Fixed Prostate & Tz
+			fixed = np.resize(np.vstack((np.unique(patient_data[perm[0]][0], axis=0), np.unique(patient_data[perm[0]][1], axis=0))), dims)
+			fixed_u = np.unique(fixed, axis=0)
+			x_fptz, y_fptz, z_fptz = get_unique_plot_points(fixed)
+			# Fixed Tz
+			fixed_transition_zone = patient_data[perm[0]][1]
+			fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
+			x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
+			# Fixed Apex & Base
+			fixed_apex = patient_data[perm[0]][5]
+			fixed_apex_u = np.unique(fixed_apex, axis=0)
+			x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
+			fixed_base = patient_data[perm[0]][6]
+			fixed_base_u = np.unique(fixed_base, axis=0)
+			x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
+
+			# Moving Prostate & Tz
+			moving = np.resize(np.vstack((np.unique(patient_data[perm[1]][0], axis=0), np.unique(patient_data[perm[1]][1], axis=0))), dims)
+			moving_u = np.unique(moving, axis=0)
+			x_mptz, y_mptz, z_mptz = get_unique_plot_points(moving)
+			# Moving Tz
+			moving_transition_zone = patient_data[perm[1]][1]
+			x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
+			# Moving Apex & Base
+			moving_apex = patient_data[perm[1]][5]
+			x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
+			moving_base = patient_data[perm[1]][6]
+			x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
+
+			# Moving2Fixed Prostate & Tz
+			t = time.time()
+			pred = model.predict([[np.array(fixed)],
+								  [np.array(moving)],
+								  [np.array(moving)]])
+			t = round(time.time() - t, 3)
+			pred_u = np.unique(pred[0], axis=0)
+			x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
+			# Moving2Fixed Tz
+			pred_transition_zone = model.predict([[np.array(fixed)],
+									   			  [np.array(moving)],
+									   			  [np.array(moving_transition_zone)]])
+			pred_transition_zone_u = np.unique(pred_transition_zone[0], axis=0)
+			x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone[0])
+			# Moving2Fixed Apex & Base
+			pred_apex = model.predict([[np.array(fixed)],
+									   [np.array(moving)],
+									   [np.array(moving_apex)]])
+			pred_apex_u = np.unique(pred_apex[0], axis=0)
+			x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
+			pred_base = model.predict([[np.array(fixed)],
+									   [np.array(moving)],
+									   [np.array(moving_base)]])
+			pred_base_u = np.unique(pred_base[0], axis=0)
+			x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
+
+			fig = plt.figure()
+			ax0 = fig.add_subplot(221, projection='3d')
+			ax0.set_title('Fixed P & Tz')
+			ax0.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
+			ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+			ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+
+			ax1 = fig.add_subplot(222, projection='3d')
+			ax1.set_title('Moving P & Tz')
+			ax1.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.2)
+			ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
+			ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
+
+			ax2 = fig.add_subplot(223, projection='3d')
+			ax2.set_title('Moving2Fixed P & Tz')
+			ax2.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
+			ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+			ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+			ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+			ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+			ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
+
+			ax3 = fig.add_subplot(224, projection='3d')
+			ax3.set_title('Fixed Tz & Moving2Fixed Tz')
+			ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
+			ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
+
+			set_plot_ax_lims([ax0, ax1, ax2, ax3])
+
+			ref_data = patient_data[perm[0]][7]
+			ref_data_mc = ref_data - np.mean(ref_data, axis=0)
+
+			# Scale the data so we can compute metrics with correct values.
+			pred_dn = denormalize(pred_u, ref_data_mc)
+			fixed_dn = denormalize(fixed_u, ref_data_mc)
+			d_c_p = round(chamfer(fixed_dn, pred_dn), 3)
+			d_h_p = round(hausdorff_2way(fixed_dn, pred_dn), 3)
+
+			pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
+			fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
+			d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+			d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+
+			fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
+			fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
+			pred_apex_dn = denormalize(pred_apex_u, ref_data_mc)
+			pred_base_dn = denormalize(pred_base_u, ref_data_mc)
+			d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
+			d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
+
+			fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
+			plt.savefig('./prostate_results-' + fname + '/PTz2PTz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
+			plt.close()
+
+			result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+			f = open('./prostate_results-' + fname + '/PTz2PTz.txt', 'a')
+			f.write(result_string)
+			f.close()
+
+	# CPD - Contour to Contour
+	for i in range(0, max_iters, 3):
+
+		ADC = all_prostates[i]
+		T1 = all_prostates[i+1]
+		T2 = all_prostates[i+2]
+		patient_data = [ADC, T1, T2]
+		
+		for perm in perms:
+
+			# Fixed Prostate
+			fixed_prostate = patient_data[perm[0]][0]
+			fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+			x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
+			# Fixed Tz
+			fixed_transition_zone = patient_data[perm[0]][1]
+			fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
+			x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
+			# Fixed Apex & Base
+			fixed_apex = patient_data[perm[0]][5]
+			fixed_apex_u = np.unique(fixed_apex, axis=0)
+			x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
+			fixed_base = patient_data[perm[0]][6]
+			fixed_base_u = np.unique(fixed_base, axis=0)
+			x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
+
+			# Moving Prostate
+			moving_prostate = patient_data[perm[1]][0]
+			moving_prostate_u = np.unique(moving_prostate, axis=0)
+			x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate)
+			# Moving Tz
+			moving_transition_zone = patient_data[perm[1]][1]
+			x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
+			# Moving Apex & Base
+			moving_apex = patient_data[perm[1]][5]
+			x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
+			moving_base = patient_data[perm[1]][6]
+			x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
+
+			# Moving2Fixed Prostate
+			reg = deformable_registration(**{'X':fixed_prostate, 'Y':moving_prostate, 'max_iterations':50})
+			t = time.time()
+			pred, params = reg.register()
+			t = round(time.time() - t, 3)
+			pred_u = np.unique(pred, axis=0)
+			x_pred, y_pred, z_pred = get_unique_plot_points(pred)
+			# Moving2Fixed Tz
+			moving_transition_zone_u = np.unique(moving_transition_zone, axis=0)
+			pred_transition_zone = moving_transition_zone_u + np.dot(gaussian_kernel(moving_prostate, moving_transition_zone_u), params[1])
+			pred_transition_zone_u = np.unique(pred_transition_zone, axis=0)
+			x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone)
+			# Moving2Fixed Apex & Base
+			moving_apex_u = np.unique(moving_apex, axis=0)
+			pred_apex = moving_apex_u + np.dot(gaussian_kernel(moving_prostate, moving_apex_u), params[1])
+			x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex)
+			moving_base_u = np.unique(moving_base, axis=0)
+			pred_base = moving_base_u + np.dot(gaussian_kernel(moving_prostate, moving_base_u), params[1])
+			x_pb, y_pb, z_pb = get_unique_plot_points(pred_base)
+
+			fig = plt.figure()
+			ax0 = fig.add_subplot(221, projection='3d')
+			ax0.set_title('Fixed P & Fixed Tz')
+			ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+			ax0.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
+			ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+			ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+
+			ax1 = fig.add_subplot(222, projection='3d')
+			ax1.set_title('Moving P & Moving Tz')
+			ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+			ax1.scatter(x_mtz, y_mtz, z_mtz, c='b', marker='.', alpha=0.2)
+			ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
+			ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
+
+			ax2 = fig.add_subplot(223, projection='3d')
+			ax2.set_title('Fixed P & Moving2Fixed P')
+			ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+			ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+			ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+			ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+			ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+			ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
+
+			ax3 = fig.add_subplot(224, projection='3d')
+			ax3.set_title('Fixed Tz & Moving2Fixed Tz')
+			ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
+			ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
+
+			set_plot_ax_lims([ax0, ax1, ax2, ax3])
+
+			ref_data = patient_data[perm[0]][7]
+			ref_data_mc = ref_data - np.mean(ref_data, axis=0)
+
+			# Scale the data so we can compute metrics with correct values.
+			pred_dn = denormalize(pred_u, ref_data_mc)
+			fixed_prostate_dn = denormalize(fixed_prostate_u, ref_data_mc)
+			d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+			d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+			pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
+			fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
+			d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+			d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+
+			fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
+			fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
+			pred_apex_dn = denormalize(pred_apex, ref_data_mc)
+			pred_base_dn = denormalize(pred_base, ref_data_mc)
+			d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
+			d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
+
+			fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
+			plt.show()
+			plt.savefig('./prostate_results/CPD-P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
+			plt.close()
+
+			result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+			f = open('./prostate_results/CPD-P2P.txt', 'a')
+			f.write(result_string)
+			f.close()
+
+	# CPD - Contour&Tz to Contour&Tz
+	for i in range(0, max_iters, 3):
+
+		ADC = all_prostates[i]
+		T1 = all_prostates[i+1]
+		T2 = all_prostates[i+2]
+		patient_data = [ADC, T1, T2]
+		
+		for perm in perms:
+
+			# Fixed Prostate & Tz
+			fixed = np.resize(np.vstack((np.unique(patient_data[perm[0]][0], axis=0), np.unique(patient_data[perm[0]][1], axis=0))), dims)
+			fixed_u = np.unique(fixed, axis=0)
+			x_fptz, y_fptz, z_fptz = get_unique_plot_points(fixed)
+			# Fixed Tz
+			fixed_transition_zone = patient_data[perm[0]][1]
+			fixed_transition_zone_u = np.unique(fixed_transition_zone, axis=0)
+			x_ftz, y_ftz, z_ftz = get_unique_plot_points(fixed_transition_zone)
+			# Fixed Apex & Base
+			fixed_apex = patient_data[perm[0]][5]
+			fixed_apex_u = np.unique(fixed_apex, axis=0)
+			x_fa, y_fa, z_fa = get_unique_plot_points(fixed_apex)
+			fixed_base = patient_data[perm[0]][6]
+			fixed_base_u = np.unique(fixed_base, axis=0)
+			x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
+
+			# Moving Prostate & Tz
+			moving = np.resize(np.vstack((np.unique(patient_data[perm[1]][0], axis=0), np.unique(patient_data[perm[1]][1], axis=0))), dims)
+			moving_u = np.unique(moving, axis=0)
+			x_mptz, y_mptz, z_mptz = get_unique_plot_points(moving)
+			# Moving Tz
+			moving_transition_zone = patient_data[perm[1]][1]
+			x_mtz, y_mtz, z_mtz = get_unique_plot_points(moving_transition_zone)
+			# Moving Apex & Base
+			moving_apex = patient_data[perm[1]][5]
+			x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
+			moving_base = patient_data[perm[1]][6]
+			x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
+
+			# Moving2Fixed Prostate & Tz
+			reg = deformable_registration(**{'X':fixed, 'Y':moving, 'max_iterations':50})
+			t = time.time()
+			pred, params = reg.register()
+			t = round(time.time() - t, 3)
+			pred_u = np.unique(pred, axis=0)
+			x_pred, y_pred, z_pred = get_unique_plot_points(pred)
+			# Moving2Fixed Tz
+			moving_transition_zone_u = np.unique(moving_transition_zone, axis=0)
+			pred_transition_zone = moving_transition_zone_u + np.dot(gaussian_kernel(moving, moving_transition_zone_u), params[1])
+			pred_transition_zone_u = np.unique(pred_transition_zone, axis=0)
+			x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone)
+			# Moving2Fixed Apex & Base
+			moving_apex_u = np.unique(moving_apex, axis=0)
+			pred_apex = moving_apex_u + np.dot(gaussian_kernel(moving, moving_apex_u), params[1])
+			x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex)
+			moving_base_u = np.unique(moving_base, axis=0)
+			pred_base = moving_base_u + np.dot(gaussian_kernel(moving, moving_base_u), params[1])
+			x_pb, y_pb, z_pb = get_unique_plot_points(pred_base)
+
+			fig = plt.figure()
+			ax0 = fig.add_subplot(221, projection='3d')
+			ax0.set_title('Fixed P & Tz')
+			ax0.scatter(x_fptz, y_fptz, z_fptz, c='y', marker='.', alpha=0.2)
+			ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
+			ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+
+			ax1 = fig.add_subplot(222, projection='3d')
+			ax1.set_title('Moving P & Tz')
+			ax1.scatter(x_mptz, y_mptz, z_mptz, c='r', marker='.', alpha=0.2)
+			ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
+			ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
+
+			ax2 = fig.add_subplot(223, projection='3d')
+			ax2.set_title('Moving2Fixed P & Tz')
+			ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+			ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
+			ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
+
+			ax3 = fig.add_subplot(224, projection='3d')
+			ax3.set_title('Fixed Tz & Moving2Fixed Tz')
+			ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
+			ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
+
+			set_plot_ax_lims([ax0, ax1, ax2, ax3])
+
+			ref_data = patient_data[perm[0]][7]
+			ref_data_mc = ref_data - np.mean(ref_data, axis=0)
+
+			# Scale the data so we can compute metrics with correct values.
+			pred_dn = denormalize(pred_u, ref_data_mc)
+			fixed_dn = denormalize(fixed_u, ref_data_mc)
+			d_c_p = round(chamfer(fixed_dn, pred_dn), 3)
+			d_h_p = round(hausdorff_2way(fixed_dn, pred_dn), 3)
+
+			pred_transition_zone_dn = denormalize(pred_transition_zone_u, ref_data_mc)
+			fixed_transition_zone_dn = denormalize(fixed_transition_zone_u, ref_data_mc)
+			d_c_tz = round(chamfer(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+			d_h_tz = round(hausdorff_2way(fixed_transition_zone_dn, pred_transition_zone_dn), 3)
+
+			fixed_apex_dn = denormalize(fixed_apex_u, ref_data_mc)
+			fixed_base_dn = denormalize(fixed_base_u, ref_data_mc)
+			pred_apex_dn = denormalize(pred_apex, ref_data_mc)
+			pred_base_dn = denormalize(pred_base, ref_data_mc)
+			d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
+			d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
+
+			fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
+			plt.show()
+			plt.savefig('./prostate_results/CPD-PTz2PTz-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
+			plt.close()
+
+			result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+			f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
+			f.write(result_string)
+			f.close()
+
+predict_file('chamfer-lr1e-3-cornerdefm-2000')
