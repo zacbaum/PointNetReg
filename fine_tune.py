@@ -23,7 +23,12 @@ from model import MatMul
 matplotlib.use('AGG')
 os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[1]
 
-if int(tf.VERSION[0]) >= 2:
+try:
+	v = int(tf.VERSION[0])
+except AttributeError:
+	v = int(tf.__version__[0])
+
+if v >= 2:
 	from tensorflow.keras.models import load_model
 	from tensorflow.keras.layers import Layer
 else:

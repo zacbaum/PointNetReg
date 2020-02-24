@@ -13,7 +13,12 @@ os.environ["CUDA_VISIBLE_DEVICES"]='CPU'
 import time
 from cpd import deformable_registration, gaussian_kernel
 
-if int(tf.VERSION[0]) >= 2:
+try:
+	v = int(tf.VERSION[0])
+except AttributeError:
+	v = int(tf.__version__[0])
+
+if v >= 2:
 	from tensorflow.keras.models import load_model
 	from tensorflow.keras.layers import Layer
 else:
@@ -166,12 +171,14 @@ def predict_file(fname):
 	f = open('./prostate_results-' + fname + '/PTz2PTz.txt', 'a')
 	f.write(header_string)
 	f.close()
+	'''
 	f = open('./prostate_results/CPD-P2P.txt', 'a')
 	f.write(header_string)
 	f.close()
 	f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
 	f.write(header_string)
 	f.close()
+	'''
 
 	# Load the model.
 	model = load_model(fname + '.h5',
@@ -439,7 +446,7 @@ def predict_file(fname):
 			f = open('./prostate_results-' + fname + '/PTz2PTz.txt', 'a')
 			f.write(result_string)
 			f.close()
-
+	'''
 	# CPD - Contour to Contour
 	for i in range(0, max_iters, 3):
 
@@ -676,5 +683,6 @@ def predict_file(fname):
 			f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
 			f.write(result_string)
 			f.close()
+	'''
 
 predict_file('chamfer-lr1e-3-cornerdefm-2000')

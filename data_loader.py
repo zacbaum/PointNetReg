@@ -63,10 +63,10 @@ class DataGenerator(Sequence):
 			moving_with_ones[:,:-1] = moving
 			moving = np.dot(T, moving_with_ones.T).T[:, :-1]
 			
-			# Add some noise to the points and recenter.
-			moving = moving + np.random.normal(0, 5e-2, dims)
+			# Recenter.
 			moving = moving - np.mean(moving, axis=0)
 			to_reg = moving
+			
 			# Take part(s) from point set(s).
 			if self.part > 0: # Register a part to whole
 				axis = np.random.randint(0, 3)
@@ -78,6 +78,7 @@ class DataGenerator(Sequence):
 					fixed = fixed[fixed[:, axis].argsort()]
 					fixed = fixed[:int(0.5 * dims[0])]
 					fixed = np.resize(fixed, dims)
+					#TODO: Make sure that the to-reg is the same part as this fixed part
 
 			X1.append(fixed)
 			X2.append(moving)

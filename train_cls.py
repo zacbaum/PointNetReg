@@ -15,13 +15,18 @@ from keras import backend as K
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 from losses import chamfer_loss, variational_loss
-from model import ConditionalTransformerNet, MatMul
+from model import ConditionalTransformerNet, TPSTransformNet, MatMul
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
 matplotlib.use('AGG')
 os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[2]
 
-if int(tf.VERSION[0]) >= 2:
+try:
+	v = int(tf.VERSION[0])
+except AttributeError:
+	v = int(tf.__version__[0])
+
+if v >= 2:
 	from tensorflow.keras.models import load_model
 	from tensorflow.keras.layers import Layer
 else:
@@ -44,14 +49,14 @@ def main():
 	if not os.path.exists('./logs' + str(sys.argv[2]) + '/'):
 		os.mkdir('./logs' + str(sys.argv[2]) + '/')
 
-	batch_size = 64
+	batch_size = 32
 	load_from_file = False
 
 	loss_name = str(sys.argv[1])
 	loss_func = None
 	learning_rate = float(sys.argv[3])
 
-	#wandb.init(project="ctn-chamfer", name='d0.0 bn0 lr1e-3')
+	wandb.init(project="ctn-chamfer", name='27TPS0.01 lr1e-3')
 
 	if loss_name == 'chamfer_loss':
 		loss_func = chamfer_loss
@@ -61,13 +66,12 @@ def main():
 
 	train = DataGenerator(train,
 						  batch_size,
-						  deform=True,
-						  part=0)
+						  deform=True)
 
 	val = DataGenerator(test,
 						batch_size,
-						deform=True,
-						part=0)
+						deform=True)
+	
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches
 	max_iter = 1      # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
@@ -98,7 +102,8 @@ def main():
 		model = load_model('CTN-chamfer_loss.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
 		initial_epoch = 1000
 	else:
-		model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=False)
+		#model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=False)
+		model = TPSTransformNet(num_points, sigma=0.01, dropout=0.0, batch_norm=False)
 		optimizer = Adam(lr=learning_rate)
 		model.compile(optimizer=optimizer,
 					  loss=loss_func)
@@ -111,14 +116,14 @@ def main():
 
 	history = model.fit_generator(train,
 								  steps_per_epoch=num_train // batch_size,
-								  epochs=1000,
+								  epochs=2000,
 								  initial_epoch=initial_epoch,
 								  validation_data=val,
 								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Val, 
-											 checkpointer],
-											 #WandbCallback()],
-								  verbose=1,
+											 checkpointer,
+											 WandbCallback()],
+								  verbose=2,
 								  use_multiprocessing=True,
 								  workers=16,
 								  max_queue_size=100)

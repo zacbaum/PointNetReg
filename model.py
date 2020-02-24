@@ -96,15 +96,14 @@ def PointNet_features(input_len, dimensions=3):
 
 	return model
 
-def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer='he_uniform', ct_activation='relu', dropout=0., verbose=False):
+def TPSTransformNet(num_points, dimensions=3, tps_features=27, sigma=1.0, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
 
 	def tps(inputs):
 		return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
 
 	def register_tps(inputs, y):
 
-		sigma = tf.slice(inputs, [tf.shape(inputs)[0] - 1], [1])
-		x = tf.slice(inputs, [0], [tf.shape(inputs)[0] - 1])
+		x = tf.slice(inputs, [0], [tf.shape(inputs)[0]])
 		x = tf.reshape(x, [2, -1, 3])
 
 		c = x[0]
@@ -127,62 +126,34 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=1000, ct_initializer=
 
 		return [x0, y]
 
-	pointNet = PointNet_features(num_points, dimensions)
-
 	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
+	moved = Input(shape=(num_points, dimensions), name='Moved_Model')
 	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
 
+	pointNet = PointNet_features(num_points, dimensions)
 	fixed_pointNet = pointNet(fixed)
-	moving_pointNet = pointNet(moving)
+	moving_pointNet = pointNet(moved)
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
 
-	x = Dense(tps_features, kernel_initializer=ct_initializer, activation=ct_activation)(point_features)
-	if dropout > 0:
-		x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
-	
-	x = Dense(tps_features, kernel_initializer=ct_initializer, activation=ct_activation)(x)
-	if dropout > 0:
-		x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
-	
-	x = Dense(tps_features * dimensions, kernel_initializer=ct_initializer, activation=ct_activation)(x)
-	if dropout > 0:
-		x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
+	nodes = [1024, 1024, 512, 512]
+	for num_nodes in nodes:
+		point_features = Dense(num_nodes, activation=ct_activation)(point_features)
+		if dropout:
+			point_features = Dropout(dropout)(point_features)
+		if batch_norm:
+			point_features = BatchNormalization()(point_features)
 
-	x = Dense(tps_features * dimensions, kernel_initializer=ct_initializer, activation=ct_activation)(x)
-	if dropout > 0:
-		x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
+	point_features = Dense(tps_features * dimensions * 2, activation=ct_activation)(point_features)
 
-	x = Dense(tps_features * dimensions * 2, kernel_initializer=ct_initializer, activation=ct_activation)(x)
-	if dropout > 0:
-		x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
-
-	x = Dense(tps_features * dimensions * 2, kernel_initializer=ct_initializer, activation=ct_activation)(x)
-	if dropout > 0:
-		x = Dropout(dropout)(x)
-	x = BatchNormalization()(x)
-
-	x = Dense(tps_features * dimensions * 2 + 1, kernel_initializer=ct_initializer)(x)
-	x = BatchNormalization()(x)
-	
-	x = Lambda(tps, name='TPS_Registration')([x, moving])
+	x = Lambda(tps, name='TPS_Registration')([point_features, moving])
 	x = add(x)
 
-	model = Model(inputs=[fixed, moving], outputs=x)
+	model = Model(inputs=[fixed, moved, moving], outputs=x)
 
 	if verbose: model.summary()
 	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
 
-	if multi_gpu:
-		try:
-			model = multi_gpu_model(model)	
-		except:
-			pass
 	return model
 
 def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
