@@ -1,5 +1,5 @@
 import h5py
-import keras
+import tensorflow.keras
 import matplotlib
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,13 +14,21 @@ from predict import get_filenames, get_indices, get_prostate_data
 from data_loader import DataGenerator
 from datetime import datetime
 from keras import backend as K
-from keras.callbacks import ModelCheckpoint
-from keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.optimizers import Adam
 from losses import chamfer_loss
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
+from model import MatMul
 matplotlib.use('AGG')
 os.environ["CUDA_VISIBLE_DEVICES"]=sys.argv[1]
+
+if int(tf.VERSION[0]) >= 2:
+	from tensorflow.keras.models import load_model
+	from tensorflow.keras.layers import Layer
+else:
+	from keras.models import load_model
+	from keras.engine.topology import Layer
 
 def fine_tune(learning_rate, freeze):
 	if not os.path.exists('./results' + str(sys.argv[1]) + '/'):
@@ -84,10 +92,7 @@ def fine_tune(learning_rate, freeze):
 								   verbose=0,
 								   save_best_only=True)
 
-	from keras.models import load_model
-	from keras.engine.topology import Layer
-	from model import MatMul
-	model = load_model('chamfer-lr1e-3-2000.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
+	model = load_model('chamfer-gn5e-2lr1e-3-moredefm-1500.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
 
 	if freeze == 1: # Freeze everything except output
 		trainable_layers = ['conv1d_17']
@@ -134,4 +139,4 @@ def fine_tune(learning_rate, freeze):
 	model.save('./results' + str(sys.argv[1]) + '/CTN-' + loss_name + '.h5')
 	model.save(os.path.join(wandb.run.dir, "model.h5"))
 
-fine_tune(learning_rate=float(sys.argv[2]), freeze=2)
+fine_tune(learning_rate=float(sys.argv[2]), freeze=0)
