@@ -9,11 +9,13 @@ from itertools import product
 
 class DataGenerator(Sequence):
 	def __init__(self, data, batch_size, shuffle=True, deform=False, part=0):
+		self.data = data
 		self.batch_size = batch_size
+
+		self.shuffle = shuffle
 		self.deform = deform
 		self.part = part
-		self.data = data
-		self.shuffle = shuffle
+
 		self.nb_sample = self.data['data'].shape[0]
 		self.indexes = np.arange(self.nb_sample)
 
@@ -26,13 +28,13 @@ class DataGenerator(Sequence):
 		# Find list of IDs
 		data_temp = [self.data['data'][k] for k in indexes]
 
-		# Generate data
+		# Generate augmented batch data
 		X, y = self.__generator(data_temp)
 
 		return X, y
 
 	def on_epoch_end(self):
-		if self.shuffle == True:
+		if self.shuffle:
 			np.random.shuffle(self.indexes)
 
 	def __generator(self, data):
@@ -40,13 +42,14 @@ class DataGenerator(Sequence):
 		X2 = []
 		X3 = []
 		Y = []
+		eps = 1e-7
 		for d in data:
 			# Extract data.
 			fixed = d
 			dims = fixed.shape
 			
 			# Normalize between [-1, 1] and mean center.
-			fixed = 2 * (fixed - np.min(fixed)) / np.ptp(fixed) - 1
+			fixed = 2 * (fixed - np.min(fixed)) / (np.ptp(fixed) + eps) - 1
 			fixed = fixed - np.mean(fixed, axis=0)
 			moving = fixed
 

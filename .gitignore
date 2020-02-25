@@ -132,3 +132,4 @@ dmypy.json
 *.mat
 *.xlsx
 *.filepart
+testK.py
