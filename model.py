@@ -144,7 +144,7 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=27, sigma=1.0, ct_act
 		if batch_norm:
 			point_features = BatchNormalization()(point_features)
 
-	point_features = Dense(tps_features * dimensions * 2, activation=ct_activation)(point_features)
+	point_features = Dense(tps_features * dimensions * 2)(point_features)
 
 	x = Lambda(tps, name='TPS_Registration')([point_features, moving])
 	x = add(x)
@@ -168,7 +168,6 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
 	point_features_matrix = RepeatVector(num_points)(point_features)
-	
 	x = concatenate([point_features_matrix, moving])
 
 	filters = [1024, 512, 256, 128, 64]
