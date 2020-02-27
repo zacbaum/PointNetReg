@@ -14,7 +14,7 @@ class Prediction_Plotter(tf.keras.callbacks.Callback):
         self.debug = debug
 
     def on_train_begin(self, logs={}):
-        pass
+        self.on_epoch_end(-1)
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % 1 == 0:
@@ -45,46 +45,6 @@ class Prediction_Plotter(tf.keras.callbacks.Callback):
                 plt.show()
                 plt.savefig(str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
                 plt.close()
-
-                if self.debug:
-                    
-                    plt.clf()
-                    fig = plt.figure()
-                    ax = fig.add_subplot(111, projection='3d')
-
-                    ax.scatter(x_pred, y_pred, z_pred, c='g', marker='.')
-
-                    mn = abs(np.min(pred[batch_id]))
-                    mx = np.max(pred[batch_id])
-                    limit = max(mn, mx)
-
-                    ax.set_xlim([limit, -limit])
-                    ax.set_ylim([limit, -limit])
-                    ax.set_zlim([limit, -limit])
-
-                    plt.show()
-                    plt.savefig('./results/PRED_ZOOMED-' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
-                    plt.close()
-
-
-                    plt.clf()
-                    fig = plt.figure()
-                    ax = fig.add_subplot(111, projection='3d')
-
-                    x_move = [i[0] for i in self.X[1][batch_id]]
-                    y_move = [i[1] for i in self.X[1][batch_id]]
-                    z_move = [i[2] for i in self.X[1][batch_id]]
-
-                    ax.scatter(x_move, y_move, z_move, c='r', marker='.')
-                    ax.scatter(x_pred, y_pred, z_pred, c='g', marker='.')
-                
-                    ax.set_xlim([-1, 1])
-                    ax.set_ylim([-1, 1])
-                    ax.set_zlim([-1, 1])
-
-                    plt.show()
-                    plt.savefig('./results/MOVE_PRED-' + str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
-                    plt.close()
 
 class PlotLosses(tf.keras.callbacks.Callback):
     def on_train_begin(self, logs={}):
