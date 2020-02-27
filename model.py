@@ -54,8 +54,8 @@ def PointNet_features(input_len, dimensions=3):
 	x = Dense(256, activation='relu')(x)
 	x = BatchNormalization()(x)
 
-	x = Dense(9, weights=[np.zeros([256, 9]), np.array([1, 0, 0, 0, 1, 0, 0, 0, 1]).astype(np.float32)])(x)
-	input_T = Reshape((3, 3))(x)
+	x = Dense(dimensions * dimensions, weights=[np.zeros([256, dimensions * dimensions]), np.eye(dimensions).flatten().astype(np.float32)])(x)
+	input_T = Reshape((dimensions, dimensions))(x)
 
 	# forward net
 	g = MatMul()([input_points, input_T])
@@ -96,7 +96,7 @@ def PointNet_features(input_len, dimensions=3):
 
 	return model
 
-def TPSTransformNet(num_points, dimensions=3, tps_features=27, sigma=1.0, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
+def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
 
 	def tps(inputs):
 		return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
@@ -126,11 +126,11 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=27, sigma=1.0, ct_act
 
 		return [x0, y]
 
-	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
-	moved = Input(shape=(num_points, dimensions), name='Moved_Model')
-	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
+	fixed = Input(shape=(num_points, dimss), name='Fixed_Model')
+	moved = Input(shape=(num_points, dimss), name='Moved_Model')
+	moving = Input(shape=(num_points, dimss), name='Moving_Model')
 
-	pointNet = PointNet_features(num_points, dimensions)
+	pointNet = PointNet_features(num_points, dimss)
 	fixed_pointNet = pointNet(fixed)
 	moving_pointNet = pointNet(moved)
 
@@ -144,7 +144,7 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=27, sigma=1.0, ct_act
 		if batch_norm:
 			point_features = BatchNormalization()(point_features)
 
-	point_features = Dense(tps_features * dimensions * 2)(point_features)
+	point_features = Dense(tps_features * dimss * 2)(point_features)
 
 	x = Lambda(tps, name='TPS_Registration')([point_features, moving])
 	x = add(x)
@@ -156,13 +156,13 @@ def TPSTransformNet(num_points, dimensions=3, tps_features=27, sigma=1.0, ct_act
 
 	return model
 
-def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
+def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
 
-	fixed = Input(shape=(num_points, dimensions), name='Fixed_Model')
-	moved = Input(shape=(num_points, dimensions), name='Moved_Model')
-	moving = Input(shape=(num_points, dimensions), name='Moving_Model')
+	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
+	moved = Input(shape=(num_points, dims), name='Moved_Model')
+	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
-	pointNet = PointNet_features(num_points, dimensions)
+	pointNet = PointNet_features(num_points, dims)
 	fixed_pointNet = pointNet(fixed)
 	moving_pointNet = pointNet(moved)
 
@@ -177,7 +177,7 @@ def ConditionalTransformerNet(num_points, dimensions=3, ct_activation='relu', dr
 			x = Dropout(dropout)(x)
 		if batch_norm:
 			x = BatchNormalization()(x)
-	x = Conv1D(dimensions, 1)(x)
+	x = Conv1D(dims, 1)(x)
 	x = add([x, moving])
 
 	model = Model(inputs=[fixed, moved, moving], outputs=x)
