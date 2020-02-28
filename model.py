@@ -126,11 +126,11 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 
 		return [x0, y]
 
-	fixed = Input(shape=(num_points, dimss), name='Fixed_Model')
-	moved = Input(shape=(num_points, dimss), name='Moved_Model')
-	moving = Input(shape=(num_points, dimss), name='Moving_Model')
+	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
+	moved = Input(shape=(num_points, dims), name='Moved_Model')
+	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
-	pointNet = PointNet_features(num_points, dimss)
+	pointNet = PointNet_features(num_points, dims)
 	fixed_pointNet = pointNet(fixed)
 	moving_pointNet = pointNet(moved)
 
@@ -144,7 +144,7 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 		if batch_norm:
 			point_features = BatchNormalization()(point_features)
 
-	point_features = Dense(tps_features * dimss * 2)(point_features)
+	point_features = Dense(tps_features * dims * 2)(point_features)
 
 	x = Lambda(tps, name='TPS_Registration')([point_features, moving])
 	x = add(x)
