@@ -8,7 +8,7 @@ import random
 from itertools import product
 
 class DataGenerator(Sequence):
-	def __init__(self, data, batch_size, dims=3, shuffle=True, deform=False, part=0, center=False, subsample=0):
+	def __init__(self, data, batch_size, dims=3, shuffle=True, deform=False, part=0, center=False):
 		self.data = data
 		self.batch_size = batch_size
 		self.dims = dims
@@ -17,7 +17,6 @@ class DataGenerator(Sequence):
 		self.deform = deform
 		self.part = part
 		self.center = center
-		self.subsample = subsample
 
 		self.nb_sample = self.data['data'].shape[0]
 		self.indexes = np.arange(self.nb_sample)
@@ -54,14 +53,7 @@ class DataGenerator(Sequence):
 			# Normalize between [-1, 1] and mean center.
 			fixed = 2 * (fixed - np.min(fixed)) / (np.ptp(fixed) + eps) - 1
 			fixed = fixed - np.mean(fixed, axis=0)
-
-			# Sub-sample the points.
-			if self.subsample:
-				fixed = fixed[np.random.choice(fixed.shape[0], size=(self.subsample * dims[0]), replace=False), :]
-				moving = fixed[np.random.choice(fixed.shape[0], size=(self.subsample * dims[0]), replace=False), :]
-				dims = fixed.shape # Update to new size
-			else:
-				moving = fixed
+			moving = fixed
 
 			# Deform.
 			if self.deform:
