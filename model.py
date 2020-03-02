@@ -1,8 +1,8 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Dropout, Input, BatchNormalization, Dense, RepeatVector, GaussianNoise, Reshape, Lambda, concatenate, add
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Dropout, Input, BatchNormalization, Dense, RepeatVector, Reshape, Lambda, concatenate, add
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.models import Model
-from tensorflow.keras.utils import multi_gpu_model, plot_model
+from tensorflow.keras.utils import plot_model
 from keras import backend as K
 import numpy as np
 import tensorflow.keras
@@ -158,13 +158,23 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 
 def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
 
+	def drop_batch_points(batch):
+		return tf.map_fn(lambda x: drop_points(x), batch)
+
+	def drop_points(points):
+		shuffled = tf.random.shuffle(points)
+		subsets = tf.split(shuffled, 4)
+		return subsets[0]
+
 	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
+	fixed_ss = Lambda(drop_batch_points, name='Fixed_Subsampled')(fixed)
 	moved = Input(shape=(num_points, dims), name='Moved_Model')
+	moved_ss = Lambda(drop_batch_points, name='Moved_Subsampled')(moved)
 	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
-	pointNet = PointNet_features(num_points, dims)
-	fixed_pointNet = pointNet(fixed)
-	moving_pointNet = pointNet(moved)
+	pointNet = PointNet_features(int(num_points / 4), dims)
+	fixed_pointNet = pointNet(fixed_ss)
+	moving_pointNet = pointNet(moved_ss)
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
 	point_features_matrix = RepeatVector(num_points)(point_features)
@@ -180,7 +190,7 @@ def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=
 	x = Conv1D(dims, 1)(x)
 	x = add([x, moving])
 
-	model = Model(inputs=[fixed, moved, moving], outputs=x)
+	model = Model(inputs=[fixed, moved, moving], outputs=x, name='CTN')
 
 	if verbose: model.summary()
 	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
