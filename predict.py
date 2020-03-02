@@ -12,6 +12,8 @@ import re
 os.environ["CUDA_VISIBLE_DEVICES"]='CPU'
 import time
 from cpd import deformable_registration, gaussian_kernel
+import h5py
+import cv2
 
 try:
 	v = int(tf.VERSION[0])
@@ -70,6 +72,314 @@ def get_unique_plot_points(points):
 	z = [i[2] for i in points_u]
 	return [x, y, z]
 
+def get_mr_us_data(fixed_fname, moving_fname, dims=[2048,3]):
+	
+	fixed = h5py.File(fixed_fname, mode='r')
+	fixed_keys = list(fixed.keys())
+	moving = h5py.File(moving_fname, mode='r')
+	moving_keys = list(moving.keys())
+	num_labels = fixed['num_labels'][0]
+	pxl_to_mm_scale = 0.8
+	
+	all_prostates = []
+	all_prostates_metrics = []
+	indx = 0
+	for case in range(len(num_labels)):
+		current = []
+		current_prostate_metrics = []
+		for mask in range(num_labels[case]):
+			
+			fixed_points = np.array(fixed[fixed_keys[indx]])
+			fixed_contour_points = []
+			for z in range(fixed_points.shape[0]):
+				edged = cv2.Canny(fixed_points[z], 0, 1)
+				indices = np.where(edged != [0])
+				coordinates = zip(indices[0], indices[1])
+				for coordinate in coordinates:
+					fixed_contour_points.append([pxl_to_mm_scale * coordinate[0], pxl_to_mm_scale * coordinate[1], pxl_to_mm_scale * z])
+			fixed_contour_points = np.array(fixed_contour_points)
+			
+			moving_points = np.array(moving[moving_keys[indx]])
+			moving_contour_points = []
+			for z in range(moving_points.shape[0]):
+				edged = cv2.Canny(moving_points[z], 0, 1)
+				indices = np.where(edged != [0])
+				coordinates = zip(indices[0], indices[1])
+				for coordinate in coordinates:
+					moving_contour_points.append([pxl_to_mm_scale * coordinate[0], pxl_to_mm_scale * coordinate[1], pxl_to_mm_scale * z])
+			moving_contour_points = np.array(moving_contour_points)
+			
+			# Scale to 2048 points, then recenter and normalize the data.
+			if fixed_contour_points.shape[0] > dims[0]:
+				fixed_contour_points = fixed_contour_points[np.random.choice(fixed_contour_points.shape[0], size=dims[0], replace=False), :]
+			else:
+				fixed_contour_points = np.resize(fixed_contour_points, dims)
+
+			if moving_contour_points.shape[0] > dims[0]:
+				moving_contour_points = moving_contour_points[np.random.choice(moving_contour_points.shape[0], size=dims[0], replace=False), :]
+			else:
+				moving_contour_points = np.resize(moving_contour_points, dims)
+
+			if current_prostate_metrics == []:
+				fixed_contour_points_mean = np.mean(fixed_contour_points, axis=0)
+				fixed_contour_points = fixed_contour_points - fixed_contour_points_mean
+				fixed_contour_points_min = np.min(fixed_contour_points)
+				fixed_contour_points_ptp = np.ptp(fixed_contour_points)
+				fixed_contour_points = 2 * (fixed_contour_points - fixed_contour_points_min) / fixed_contour_points_ptp - 1
+				fixed_prostate_metrics = [fixed_contour_points_mean, fixed_contour_points_min, fixed_contour_points_ptp]
+				moving_contour_points_mean = np.mean(moving_contour_points, axis=0)
+				moving_contour_points = moving_contour_points - moving_contour_points_mean
+				moving_contour_points_min = np.min(moving_contour_points)
+				moving_contour_points_ptp = np.ptp(moving_contour_points)
+				moving_contour_points = 2 * (moving_contour_points - moving_contour_points_min) / moving_contour_points_ptp - 1
+				moving_prostate_metrics = [moving_contour_points_mean, moving_contour_points_min, moving_contour_points_ptp]
+			else: 
+				fixed_contour_points = fixed_contour_points - fixed_prostate_metrics[0]
+				fixed_contour_points = 2 * (fixed_contour_points - fixed_prostate_metrics[1]) / fixed_prostate_metrics[2] - 1
+				moving_contour_points = moving_contour_points - moving_prostate_metrics[0]
+				moving_contour_points = 2 * (moving_contour_points - moving_prostate_metrics[1]) / moving_prostate_metrics[2] - 1
+
+			current.append([fixed_contour_points, moving_contour_points])
+			if current_prostate_metrics == []:
+				current_prostate_metrics.append([fixed_prostate_metrics, moving_prostate_metrics])
+			indx += 1
+		
+		all_prostates.append(current)
+		all_prostates_metrics.append(current_prostate_metrics)
+	return all_prostates, all_prostates_metrics
+
+def set_plot_ax_lims(axes, limit=1):
+	for ax in axes:
+		ax.set_xlim([-limit, limit])
+		ax.set_ylim([-limit, limit])
+		ax.set_zlim([-limit, limit])
+
+def denormalize(unique_points, reference_points):
+	unique_points_dn = 0.5 * ((unique_points * np.ptp(reference_points)) + (2 * np.min(reference_points)) + np.ptp(reference_points))
+	return unique_points_dn
+
+def denormalize_from_metrics(unique_points, minimum, ptp):
+	unique_points_dn = 0.5 * ((unique_points * ptp) + (2 * minimum) + ptp)
+	return unique_points_dn
+
+def predict_mr_us_file(fname):
+	if not os.path.exists('./prostate_results-' + fname + '/'):
+			os.mkdir('./prostate_results-' + fname + '/')
+
+	header_string = 'P_ID\tTIME\tDC_P\tDH_P\tDC_R1\tDH_R1\tTRE_R1\tDC_R2\tDH_R2\tTRE_R2\tDC_R3\tDH_R3\tTRE_R3\tDC_R4\tDH_R4\tTRE_R4\tDC_R5\tDH_R5\tTRE_R5\n'
+	f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+	f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+
+	# Load the model.
+	model = load_model(fname + '.h5',
+				   	   custom_objects={'MatMul':MatMul},
+				       compile=False)
+
+	dims = [2048, 3]
+	if not os.path.exists('./mrus/prostates.npy') or not os.path.exists('./mrus/prostate_metrics.npy'):
+		all_prostates, metrics = get_mr_us_data('./mrus/us_labels_resampled800_post3.h5', './mrus/mr_labels_resampled800_post3.h5')
+		np.save('./mrus/prostates.npy', all_prostates)
+		np.save('./mrus/prostate_metrics.npy', metrics)
+	else:
+		all_prostates = np.load('./mrus/prostates.npy', allow_pickle=True)
+		metrics = np.load('./mrus/prostate_metrics.npy', allow_pickle=True)
+
+	max_iters = len(all_prostates)
+
+	# CTN - Contour to Contour
+	for i in range(max_iters):
+
+		# Fixed Prostate
+		fixed_prostate = all_prostates[i][0][0]
+		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
+		# Fixed ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		fixed_ROIs = [x[0] for x in ROIs]
+		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_u]
+
+		# Moving Prostate
+		moving_prostate = all_prostates[i][0][1]
+		moving_prostate_u = np.unique(moving_prostate, axis=0)
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_u)
+		# Moving ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		moving_ROIs = [x[1] for x in ROIs]
+		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		# Moving2Fixed Prostate
+		t = time.time()
+		#pred = moving_prostate
+		pred = model.predict([[np.array(fixed_prostate)],
+							  [np.array(moving_prostate)],
+							  [np.array(moving_prostate)]])
+		t = round(time.time() - t, 3)
+		#pred_u = np.unique(pred, axis=0)
+		#x_pred, y_pred, z_pred = get_unique_plot_points(pred)
+		pred_u = np.unique(pred[0], axis=0)
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
+		
+		# Moving2Fixed ROIs
+		#pred_ROIs = moving_ROIs
+		pred_ROIs = [model.predict([[np.array(fixed_prostate)],
+								   	[np.array(moving_prostate)],
+								   	[np.array(x)]]) for x in moving_ROIs]
+		#pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
+		#pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_u]
+		pred_ROIs_u = [np.unique(x[0], axis=0) for x in pred_ROIs]
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_u]
+
+		fig = plt.figure()
+		ax0 = fig.add_subplot(221, projection='3d')
+		ax0.set_title('Fixed')
+		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		
+		ax1 = fig.add_subplot(222, projection='3d')
+		ax1.set_title('Moving')
+		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+	
+		ax2 = fig.add_subplot(223, projection='3d')
+		ax2.set_title('Registered Contours')
+		ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+	
+		ax3 = fig.add_subplot(224, projection='3d')
+		ax3.set_title('Registered ROIs')
+		for roi in fixed_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='y', marker='.', alpha=0.1)
+		for roi in pred_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
+
+		set_plot_ax_lims([ax0, ax1, ax2, ax3])
+		
+		# Scale the data so we can compute metrics with correct values.
+		current_metrics = metrics[i][0][0]
+		pred_dn = denormalize_from_metrics(pred_u, current_metrics[1], current_metrics[2])
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, current_metrics[1], current_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		ROIs_string = ''
+		for roi in range(5):
+			d_c = str(d_c_ROIs[roi]) if roi < len(d_c_ROIs) else ' '
+			d_h = str(d_h_ROIs[roi]) if roi < len(d_h_ROIs) else ' '
+			d_RE = str(d_RE_ROIs[roi]) if roi < len(d_RE_ROIs) else ' '
+			ROIs_string += str(d_c) + '\t' + str(d_h) + '\t' + str(d_RE) + '\t'
+		result_string = str(i + 1) + '\t' + str(t) + '\t' + \
+							str(d_c_p) + '\t' + str(d_h_p) + '\t' + \
+							ROIs_string + '\n'
+		f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
+
+		fig.suptitle('Patient ' + str(i + 1) + ' - MR to US')
+		plt.show()
+		plt.savefig('./prostate_results-' + fname + '/P2P-' + str(i + 1) + '.png', dpi=300)
+		plt.close()
+
+	'''
+	# CPD - Contour to Contour
+	for i in range(0, max_iters):
+
+		# Fixed Prostate
+		fixed_prostate = all_prostates[i][0][0]
+		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
+		# Fixed ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		fixed_ROIs = [x[0] for x in ROIs]
+		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_u]
+
+		# Moving Prostate
+		moving_prostate = all_prostates[i][0][1]
+		moving_prostate_u = np.unique(moving_prostate, axis=0)
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_u)
+		# Moving ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		moving_ROIs = [x[1] for x in ROIs]
+		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		# Moving2Fixed Prostate
+		reg = deformable_registration(**{'X':fixed_prostate, 'Y':moving_prostate, 'max_iterations':150})
+		t = time.time()
+		pred, params = reg.register()
+		t = round(time.time() - t, 3)
+		pred_u = np.unique(pred, axis=0)
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred)
+		# Moving2Fixed ROIs
+		pred_ROIs = [x + np.dot(gaussian_kernel(moving_prostate, x), params[1]) for x in moving_ROIs_u]
+		pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_u]
+
+		fig = plt.figure()
+		ax0 = fig.add_subplot(221, projection='3d')
+		ax0.set_title('Fixed')
+		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		
+		ax1 = fig.add_subplot(222, projection='3d')
+		ax1.set_title('Moving')
+		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+	
+		ax2 = fig.add_subplot(223, projection='3d')
+		ax2.set_title('Registered Contours')
+		ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+	
+		ax3 = fig.add_subplot(224, projection='3d')
+		ax3.set_title('Registered ROIs')
+		for roi in fixed_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='y', marker='.', alpha=0.1)
+		for roi in pred_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
+
+		set_plot_ax_lims([ax0, ax1, ax2, ax3])
+
+		# Scale the data so we can compute metrics with correct values.
+		current_metrics = metrics[i][0][0]
+		pred_dn = denormalize_from_metrics(pred_u, current_metrics[1], current_metrics[2])
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, current_metrics[1], current_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		ROIs_string = ''
+		for roi in range(5):
+			d_c = str(d_c_ROIs[roi]) if roi < len(d_c_ROIs) else ' '
+			d_h = str(d_h_ROIs[roi]) if roi < len(d_h_ROIs) else ' '
+			d_RE = str(d_RE_ROIs[roi]) if roi < len(d_RE_ROIs) else ' '
+			ROIs_string += str(d_c) + '\t' + str(d_h) + '\t' + str(d_RE) + '\t'
+		result_string = str(i + 1) + '\t' + str(t) + '\t' + \
+							str(d_c_p) + '\t' + str(d_h_p) + '\t' + \
+							ROIs_string + '\n'
+		f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
+
+		fig.suptitle('Patient ' + str(i + 1) + ' - MR to US')
+		plt.show()
+		plt.savefig('./prostate_results-' + fname + '/CPD-P2P-' + str(i + 1) + '.png', dpi=300)
+		plt.close()
+	'''
+
 def get_filenames(data):
 	filenames = []
 	for fname in data['Filenames'][0]: # Get all filenames.
@@ -126,10 +436,10 @@ def get_prostate_data(data, indxs, dims=[2048,3]):
 					val_index = all_shapes.index(threeD_shapes[second_largest])
 				prostate_j_data = prostate[0][j][0][0][val_index]
 
-				if prostate_j_data.shape[0] > dims[0]:
-					prostate_j_data = prostate_j_data[np.random.randint(prostate_j_data.shape[0], size=dims[0]), :]
-				prostate_j_data_centered = prostate_j_data - np.mean(mc_data, axis=0)
+				if prostate_j_data.shape[0] > dims[0]:				prostate_j_data_centered = prostate_j_data - np.mean(mc_data, axis=0)
 				prostate_j_data_normalized = 2 * (prostate_j_data_centered - np.min(norm_data)) / np.ptp(norm_data) - 1
+
+				prostate_j_data = prostate_j_data[np.random.randint(prostate_j_data.shape[0], size=dims[0]), :]
 				prostate_j_data_resized = np.resize(prostate_j_data_normalized, dims)
 
 				if prostate[0][j][0][0][0] == 'ROI 1':
@@ -150,39 +460,32 @@ def get_prostate_data(data, indxs, dims=[2048,3]):
 		all_prostates.append(prostate_j)
 	return all_prostates
 
-def set_plot_ax_lims(axes, limit=1):
-	for ax in axes:
-		ax.set_xlim([-limit, limit])
-		ax.set_ylim([-limit, limit])
-		ax.set_zlim([-limit, limit])
+def predict_prostate_file(fname):
 
-def denormalize(unique_points, reference_points):
-	unique_points_dn = 0.5 * ((unique_points * np.ptp(reference_points)) + (2 * np.min(reference_points)) + np.ptp(reference_points))
-	return unique_points_dn
-
-def predict_file(fname):
 	if not os.path.exists('./prostate_results-' + fname + '/'):
 		os.mkdir('./prostate_results-' + fname + '/')
 
-	header_string = 'P_ID\tMOVING\tFIXED\tTIME\tDC_P\tDH_P\tDC_Tz\tDH_Tz\tD_Apex\tD_Base\n'
+	header_string = 'P_ID\tMOVING\tFIXED\tTIME\tDC_P\tDH_P\tDC_Tz\tDH_Tz\tDC_T1\tDH_T1\tDC_T2\tDH_T2\tDC_T3\tDH_T3\tD_Apex\tD_Base\n'
 	f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
 	f.write(header_string)
 	f.close()
 	f = open('./prostate_results-' + fname + '/PTz2PTz.txt', 'a')
 	f.write(header_string)
 	f.close()
-	f = open('./prostate_results/CPD-P2P.txt', 'a')
+	'''
+	f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
 	f.write(header_string)
 	f.close()
-	f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
+	f = open('./prostate_results-' + fname + '/CPD-PTz2PTz.txt', 'a')
 	f.write(header_string)
 	f.close()
+	'''
 
 	# Load the model.
 	model = load_model(fname + '.h5',
 				   	   custom_objects={'MatMul':MatMul},
 				       compile=False)
-
+	
 	dims = [2048, 3]
 	prostate_data = sio.loadmat('prostate.mat')
 	filenames = get_filenames(prostate_data)
@@ -220,6 +523,19 @@ def predict_file(fname):
 			fixed_base = patient_data[perm[0]][6]
 			fixed_base_u = np.unique(fixed_base, axis=0)
 			x_fb, y_fb, z_fb = get_unique_plot_points(fixed_base)
+			# Fixed Tumor(s)
+			fixed_t1 = patient_data[perm[0]][2]
+			if fixed_t1.size > 0:
+				fixed_t1_u = np.unique(fixed_t1, axis=0)
+				x_ft1, y_ft1, z_ft1 = get_unique_plot_points(fixed_t1)
+			fixed_t2 = patient_data[perm[0]][3]
+			if fixed_t2.size > 0:
+				fixed_t2_u = np.unique(fixed_t2, axis=0)
+				x_ft2, y_ft2, z_ft2 = get_unique_plot_points(fixed_t2)
+			fixed_t3 = patient_data[perm[0]][4]
+			if fixed_t3.size > 0:
+				fixed_t3_u = np.unique(fixed_t3, axis=0)
+				x_ft3, y_ft3, z_ft3 = get_unique_plot_points(fixed_t3)
 
 			# Moving Prostate
 			moving_prostate = patient_data[perm[1]][0]
@@ -232,32 +548,85 @@ def predict_file(fname):
 			x_ma, y_ma, z_ma = get_unique_plot_points(moving_apex)
 			moving_base = patient_data[perm[1]][6]
 			x_mb, y_mb, z_mb = get_unique_plot_points(moving_base)
+			# Moving Tumor(s)
+			moving_t1 = patient_data[perm[1]][2]
+			if moving_t1.size > 0:
+				moving_t1_u = np.unique(moving_t1, axis=0)
+				x_mt1, y_mt1, z_mt1 = get_unique_plot_points(moving_t1)
+			moving_t2 = patient_data[perm[1]][3]
+			if moving_t2.size > 0:
+				moving_t2_u = np.unique(moving_t2, axis=0)
+				x_mt2, y_mt2, z_mt2 = get_unique_plot_points(moving_t2)
+			moving_t3 = patient_data[perm[1]][4]
+			if moving_t3.size > 0:
+				moving_t3_u = np.unique(moving_t3, axis=0)
+				x_mt3, y_mt3, z_mt3 = get_unique_plot_points(moving_t3)
 
 			# Moving2Fixed Prostate
 			t = time.time()
-			pred = model.predict([[np.array(fixed_prostate)],
-								  [np.array(moving_prostate)],
-								  [np.array(moving_prostate)]])
+			pred = moving_prostate
+			#pred = model.predict([[np.array(fixed_prostate)],
+			#					  [np.array(moving_prostate)],
+			#					  [np.array(moving_prostate)]])
 			t = round(time.time() - t, 3)
-			pred_u = np.unique(pred[0], axis=0)
-			x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
+			pred_u = np.unique(pred, axis=0)
+			x_pred, y_pred, z_pred = get_unique_plot_points(pred)
+			#pred_u = np.unique(pred[0], axis=0)
+			#x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
 			# Moving2Fixed Tz
-			pred_transition_zone = model.predict([[np.array(fixed_prostate)],
-									   			  [np.array(moving_prostate)],
-									   			  [np.array(moving_transition_zone)]])
-			pred_transition_zone_u = np.unique(pred_transition_zone[0], axis=0)
-			x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone[0])
+			pred_transition_zone = moving_transition_zone
+			#pred_transition_zone = model.predict([[np.array(fixed_prostate)],
+			#						   			  [np.array(moving_prostate)],
+			#						   			  [np.array(moving_transition_zone)]])
+			pred_transition_zone_u = np.unique(pred_transition_zone, axis=0)
+			x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone)
+			#pred_transition_zone_u = np.unique(pred_transition_zone[0], axis=0)
+			#x_ptz, y_ptz, z_ptz = get_unique_plot_points(pred_transition_zone[0])
 			# Moving2Fixed Apex & Base
-			pred_apex = model.predict([[np.array(fixed_prostate)],
-									   [np.array(moving_prostate)],
-									   [np.array(moving_apex)]])
-			pred_apex_u = np.unique(pred_apex[0], axis=0)
-			x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
-			pred_base = model.predict([[np.array(fixed_prostate)],
-									   [np.array(moving_prostate)],
-									   [np.array(moving_base)]])
-			pred_base_u = np.unique(pred_base[0], axis=0)
-			x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
+			pred_apex = moving_apex
+			#pred_apex = model.predict([[np.array(fixed_prostate)],
+			#						   [np.array(moving_prostate)],
+			#						   [np.array(moving_apex)]])
+			pred_apex_u = np.unique(pred_apex, axis=0)
+			x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex)
+			#pred_apex_u = np.unique(pred_apex[0], axis=0)
+			#x_pa, y_pa, z_pa = get_unique_plot_points(pred_apex[0])
+			pred_base = moving_base
+			#pred_base = model.predict([[np.array(fixed_prostate)],
+			#						   [np.array(moving_prostate)],
+			#						   [np.array(moving_base)]])
+			pred_base_u = np.unique(pred_base, axis=0)
+			x_pb, y_pb, z_pb = get_unique_plot_points(pred_base)
+			#pred_base_u = np.unique(pred_base[0], axis=0)
+			#x_pb, y_pb, z_pb = get_unique_plot_points(pred_base[0])
+			# Moving2Fixed Tumor(s)
+			if moving_t1.size > 0 and fixed_t1.size > 0:
+				pred_t1 = moving_t1
+				#pred_t1 = model.predict([[np.array(fixed_prostate)],
+				#						  [np.array(moving_prostate)],
+				#						  [np.array(moving_t1)]])
+				pred_t1_u = np.unique(pred_t1, axis=0)
+				x_pt1, y_pt1, z_pt1 = get_unique_plot_points(pred_t1)
+				#pred_t1_u = np.unique(pred_t1[0], axis=0)
+				#x_pt1, y_pt1, z_pt1 = get_unique_plot_points(pred_t1[0])
+			if moving_t2.size > 0 and fixed_t2.size > 0:
+				pred_t2 = moving_t2
+				#pred_t2 = model.predict([[np.array(fixed_prostate)],
+				#						  [np.array(moving_prostate)],
+				#						  [np.array(moving_t2)]])
+				pred_t2_u = np.unique(pred_t2, axis=0)
+				x_pt2, y_pt2, z_pt2 = get_unique_plot_points(pred_t2)
+				#pred_t2_u = np.unique(pred_t2[0], axis=0)
+				#x_pt2, y_pt2, z_pt2 = get_unique_plot_points(pred_t2[0])
+			if moving_t3.size > 0 and fixed_t3.size > 0:
+				pred_t3 = moving_t3
+				#pred_t3 = model.predict([[np.array(fixed_prostate)],
+				#						  [np.array(moving_prostate)],
+				#						  [np.array(moving_t3)]])
+				pred_t3_u = np.unique(pred_t3, axis=0)
+				x_pt3, y_pt3, z_pt3 = get_unique_plot_points(pred_t3)
+				#pred_t3_u = np.unique(pred_t3[0], axis=0)
+				#x_pt3, y_pt3, z_pt3 = get_unique_plot_points(pred_t3[0])
 
 			fig = plt.figure()
 			ax0 = fig.add_subplot(221, projection='3d')
@@ -266,6 +635,12 @@ def predict_file(fname):
 			ax0.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
 			ax0.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
 			ax0.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
+			if moving_t1.size > 0 and fixed_t1.size > 0:
+				ax0.scatter(x_ft1, y_ft1, z_ft1, c='k', marker='.', alpha=0.2)		
+			if moving_t2.size > 0 and fixed_t2.size > 0:
+				ax0.scatter(x_ft2, y_ft2, z_ft2, c='k', marker='.', alpha=0.2)					
+			if moving_t3.size > 0 and fixed_t3.size > 0:
+				ax0.scatter(x_ft3, y_ft3, z_ft3, c='k', marker='.', alpha=0.2)		
 
 			ax1 = fig.add_subplot(222, projection='3d')
 			ax1.set_title('Moving P & Moving Tz')
@@ -273,18 +648,35 @@ def predict_file(fname):
 			ax1.scatter(x_mtz, y_mtz, z_mtz, c='b', marker='.', alpha=0.2)
 			ax1.scatter(x_ma, y_ma, z_ma, c='k', marker='^', alpha=1)
 			ax1.scatter(x_mb, y_mb, z_mb, c='k', marker='v', alpha=1)
+			if moving_t1.size > 0 and fixed_t1.size > 0:
+				ax1.scatter(x_mt1, y_mt1, z_mt1, c='k', marker='.', alpha=0.2)		
+			if moving_t2.size > 0 and fixed_t2.size > 0:
+				ax1.scatter(x_mt2, y_mt2, z_mt2, c='k', marker='.', alpha=0.2)					
+			if moving_t3.size > 0 and fixed_t3.size > 0:
+				ax1.scatter(x_mt3, y_mt3, z_mt3, c='k', marker='.', alpha=0.2)	
 
 			ax2 = fig.add_subplot(223, projection='3d')
-			ax2.set_title('Fixed P & Moving2Fixed P')
+			ax2.set_title('Fixed P & Moving P')
+			#ax2.set_title('Fixed P & Moving2Fixed P')
 			ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
 			ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
 			ax2.scatter(x_fa, y_fa, z_fa, c='k', marker='^', alpha=1)
 			ax2.scatter(x_fb, y_fb, z_fb, c='k', marker='v', alpha=1)
 			ax2.scatter(x_pa, y_pa, z_pa, c='b', marker='^', alpha=1)
 			ax2.scatter(x_pb, y_pb, z_pb, c='b', marker='v', alpha=1)
+			if moving_t1.size > 0 and fixed_t1.size > 0:
+				ax2.scatter(x_ft1, y_ft1, z_ft1, c='k', marker='.', alpha=0.2)		
+				ax2.scatter(x_pt1, y_pt1, z_pt1, c='b', marker='.', alpha=0.2)		
+			if moving_t2.size > 0 and fixed_t2.size > 0:
+				ax2.scatter(x_ft2, y_ft2, z_ft2, c='k', marker='.', alpha=0.2)		
+				ax2.scatter(x_pt2, y_pt2, z_pt2, c='b', marker='.', alpha=0.2)					
+			if moving_t3.size > 0 and fixed_t3.size > 0:
+				ax2.scatter(x_ft2, y_ft2, z_ft2, c='k', marker='.', alpha=0.2)		
+				ax2.scatter(x_pt3, y_pt3, z_pt3, c='b', marker='.', alpha=0.2)	
 
 			ax3 = fig.add_subplot(224, projection='3d')
-			ax3.set_title('Fixed Tz & Moving2Fixed Tz')
+			ax3.set_title('Fixed Tz & Moving Tz')
+			#ax3.set_title('Fixed Tz & Moving2Fixed Tz')
 			ax3.scatter(x_ftz, y_ftz, z_ftz, c='m', marker='.', alpha=0.2)
 			ax3.scatter(x_ptz, y_ptz, z_ptz, c='g', marker='.', alpha=0.2)
 
@@ -311,16 +703,48 @@ def predict_file(fname):
 			d_apex = round(np.linalg.norm(fixed_apex_dn - pred_apex_dn), 3)
 			d_base = round(np.linalg.norm(fixed_base_dn - pred_base_dn), 3)
 
+			if moving_t1.size > 0 and fixed_t1.size > 0:
+				ft1_dn = denormalize(fixed_t1_u, ref_data_mc)
+				pt1_dn = denormalize(pred_t1_u, ref_data_mc)
+				d_c_t1 = round(chamfer(ft1_dn, pt1_dn), 3)
+				d_h_t1 = round(hausdorff_2way(ft1_dn, pt1_dn), 3)
+			else:
+				d_c_t1 = ' '
+				d_h_t1 = ' '
+			if moving_t2.size > 0 and fixed_t2.size > 0:
+				ft2_dn = denormalize(fixed_t2_u, ref_data_mc)
+				pt2_dn = denormalize(pred_t2_u, ref_data_mc)
+				d_c_t2 = round(chamfer(ft2_dn, pt2_dn), 3)
+				d_h_t2 = round(hausdorff_2way(ft2_dn, pt2_dn), 3)
+			else:
+				d_c_t2 = ' '
+				d_h_t2 = ' '
+			if moving_t3.size > 0 and fixed_t3.size > 0:
+				ft3_dn = denormalize(fixed_t3_u, ref_data_mc)
+				pt3_dn = denormalize(pred_t3_u, ref_data_mc)
+				d_c_t3 = round(chamfer(ft3_dn, pt3_dn), 3)
+				d_h_t3 = round(hausdorff_2way(ft3_dn, pt3_dn), 3)
+			else:
+				d_c_t3 = ' '
+				d_h_t3 = ' '
+
 			fig.suptitle(str(filenames[indxs[i]][0]) + ' ' + str(tags[perm[1]]) + ' to ' + str(tags[perm[0]]))
 			plt.show()
 			plt.savefig('./prostate_results-' + fname + '/P2P-' + str(filenames[indxs[i]][0]) + '_' + str(tags[perm[1]]) + '-to-' + str(tags[perm[0]]) + '.png', dpi=300)
 			plt.close()
 
-			result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + str(d_c_p) + '\t' + str(d_h_p) + '\t' + str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + str(d_apex) + '\t' + str(d_base) + '\n'
+			result_string = str(filenames[indxs[i]][0]) + '\t' + str(tags[perm[1]]) + '\t' + str(tags[perm[0]]) + '\t' + str(t) + '\t' + \
+								str(d_c_p) + '\t' + str(d_h_p) + '\t' + \
+								str(d_c_tz) + '\t' + str(d_h_tz) + '\t' + \
+								str(d_c_t1) + '\t' + str(d_h_t1) + '\t' + \
+								str(d_c_t2) + '\t' + str(d_h_t2) + '\t' + \
+								str(d_c_t3) + '\t' + str(d_h_t3) + '\t' + \
+								str(d_apex) + '\t' + str(d_base) + '\n'
 			f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
 			f.write(result_string)
 			f.close()
 
+	'''
 	# CTN - Contour&Tz to Contour&Tz
 	for i in range(0, max_iters, 3):
 
@@ -681,3 +1105,16 @@ def predict_file(fname):
 			f = open('./prostate_results/CPD-PTz2PTz.txt', 'a')
 			f.write(result_string)
 			f.close()
+	'''
+
+predict_mr_us_file('ROI-lr1e-3-f0')
+predict_mr_us_file('ROI-lr1e-3-f1')
+predict_mr_us_file('ROI-lr1e-3-f2')
+
+predict_mr_us_file('ROI-lr1e-4-f0')
+predict_mr_us_file('ROI-lr1e-4-f1')
+predict_mr_us_file('ROI-lr1e-4-f2')
+
+predict_mr_us_file('ROI-lr1e-5-f0')
+predict_mr_us_file('ROI-lr1e-5-f1')
+predict_mr_us_file('ROI-lr1e-5-f2')
