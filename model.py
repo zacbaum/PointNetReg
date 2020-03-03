@@ -99,10 +99,11 @@ def PointNet_features(input_len, dimensions=3):
 def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
 
 	def tps(inputs):
+		import tensorflow as tf
 		return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
 
 	def register_tps(inputs, y):
-
+		import tensorflow as tf
 		x = tf.slice(inputs, [0], [tf.shape(inputs)[0]])
 		x = tf.reshape(x, [2, -1, 3])
 
@@ -111,13 +112,11 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 
 		x_norms = tf.reduce_sum(tf.square(x), axis=1)
 		x_norms = tf.reshape(x_norms, [-1, 1])
-
 		y_norms = tf.reduce_sum(tf.square(y), axis=1)
 		y_norms = tf.reshape(y_norms, [-1, 1])
 
 		k1 = x_norms * tf.ones([1, K.int_shape(y)[0]])
 		k2 = tf.ones([K.int_shape(x)[0], 1]) * tf.transpose(y_norms)
-
 		k = k1 + k2
 		k -= (2 * tf.matmul(x, y, False, True))
 		k = tf.exp(tf.truediv(k, (-2 * tf.square(sigma))))
