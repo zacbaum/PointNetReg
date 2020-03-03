@@ -55,9 +55,6 @@ def variational_loss(y_true, y_pred):
 	return K.mean(tf.stack([tf.stack(batched_losses_AB),
 							tf.stack(batched_losses_BA)]))
 
-def cham_var_loss(y_true, y_pred):
-	return K.mean(tf.stack([variational_loss(y_true, y_pred), chamfer_loss(y_true, y_pred)]))
-
 def gmm_nll_loss(covariance_matrix_diag, mix_param_val):
 
 	def gmm_nll_batched(y_true, y_pred):

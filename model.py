@@ -156,14 +156,16 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 
 	return model
 
-def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
+def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=0., batch_norm=False, verbose=False, n_subsets=1):
 
 	def drop_batch_points(batch):
+		import tensorflow as tf
 		return tf.map_fn(lambda x: drop_points(x), batch)
 
 	def drop_points(points):
+		import tensorflow as tf
 		shuffled = tf.random.shuffle(points)
-		subsets = tf.split(shuffled, 4)
+		subsets = tf.split(shuffled, n_subsets)
 		return subsets[0]
 
 	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
@@ -172,7 +174,7 @@ def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=
 	moved_ss = Lambda(drop_batch_points, name='Moved_Subsampled')(moved)
 	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
-	pointNet = PointNet_features(int(num_points / 4), dims)
+	pointNet = PointNet_features(int(num_points / n_subsets), dims)
 	fixed_pointNet = pointNet(fixed_ss)
 	moving_pointNet = pointNet(moved_ss)
 
