@@ -18,7 +18,7 @@ class Prediction_Plotter(tf.keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % 1 == 0:
-            pred = self.model.predict(self.X)
+            pred = self.model.predict_on_batch(self.X)
 
             assert(self.Y.shape[0] == pred.shape[0])
             for batch_id in range(0, pred.shape[0], int(pred.shape[0] / 5)):
@@ -45,34 +45,3 @@ class Prediction_Plotter(tf.keras.callbacks.Callback):
                 plt.show()
                 plt.savefig(str(self.fname_tag) + '_id_' + str(batch_id + 1) + '_epoch_' + str(epoch + 1) + '_reg-scatter.png', dpi=150)
                 plt.close()
-
-class PlotLosses(tf.keras.callbacks.Callback):
-    def on_train_begin(self, logs={}):
-        self.i = 0
-        self.x = []
-        
-        self.losses = []
-        self.val_losses = []
-        
-        self.fig = plt.figure()
-        
-        self.logs = []
-
-    def on_epoch_end(self, epoch, logs={}):
-
-        self.logs.append(logs)
-        self.x.append(self.i)
-        self.losses.append(logs.get('loss'))
-        self.val_losses.append(logs.get('val_loss'))
-        self.i += 1
-        f, ax1 = plt.subplots(1, 1, sharex=True)
-                
-        ax1.plot(self.x, self.losses, label="loss")
-        ax1.plot(self.x, self.val_losses, label="validation loss")
-        ax1.legend()
-        
-        plt.show()
-        plt.savefig('live_metrics.png', dpi=250)
-        plt.yscale('log')
-        plt.savefig('live_metrics-log.png', dpi=250)
-        plt.close()
