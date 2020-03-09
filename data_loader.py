@@ -73,6 +73,7 @@ class DataGenerator(Sequence):
 			if self.center:
 				moving = moving - np.mean(moving, axis=0)
 			to_reg = moving
+
 			
 			# Take part(s) from point set(s).
 			if self.part > 0: # Register a part to whole

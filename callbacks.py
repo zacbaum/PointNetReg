@@ -27,9 +27,9 @@ class Prediction_Plotter(tf.keras.callbacks.Callback):
                 fig = plt.figure()
                 ax = fig.add_subplot(111, projection='3d')
 
-                x_true = [i[0] for i in self.X[0][batch_id]]
-                y_true = [i[1] for i in self.X[0][batch_id]]
-                z_true = [i[2] for i in self.X[0][batch_id]]
+                x_true = [i[0] for i in self.Y[batch_id]]
+                y_true = [i[1] for i in self.Y[batch_id]]
+                z_true = [i[2] for i in self.Y[batch_id]]
 
                 x_pred = [i[0] for i in pred[batch_id]]
                 y_pred = [i[1] for i in pred[batch_id]]
