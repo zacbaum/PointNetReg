@@ -12,6 +12,7 @@ import re
 os.environ["CUDA_VISIBLE_DEVICES"]='CPU'
 import time
 from cpd import deformable_registration, gaussian_kernel
+from model import MatMul, ConditionalTransformerNet, TPSTransformNet
 import h5py
 import cv2
 
@@ -26,36 +27,6 @@ if v >= 2:
 else:
 	from keras.models import load_model
 	from keras.engine.topology import Layer
-
-class MatMul(Layer):
-
-	def __init__(self, **kwargs):
-		super(MatMul, self).__init__(**kwargs)
-
-	def build(self, input_shape):
-		# Used purely for shape validation.
-		if not isinstance(input_shape, list):
-			raise ValueError('`MatMul` layer should be called '
-							 'on a list of inputs')
-		if len(input_shape) != 2:
-			raise ValueError('The input of `MatMul` layer should be a list containing 2 elements')
-
-		if len(input_shape[0]) != 3 or len(input_shape[1]) != 3:
-			raise ValueError('The dimensions of each element of inputs should be 3')
-
-		if input_shape[0][-1] != input_shape[1][1]:
-			raise ValueError('The last dimension of inputs[0] should match the dimension 1 of inputs[1]')
-
-	def call(self, inputs):
-		if not isinstance(inputs, list):
-			raise ValueError('A `MatMul` layer should be called '
-							 'on a list of inputs.')
-		import tensorflow as tf
-		return tf.matmul(inputs[0], inputs[1])
-
-	def compute_output_shape(self, input_shape):
-		output_shape = [input_shape[0][0], input_shape[0][1], input_shape[1][-1]]
-		return tuple(output_shape)
 
 def chamfer(a, b):
 	D = scipy.spatial.distance.cdist(a, b)
@@ -109,17 +80,6 @@ def get_mr_us_data(fixed_fname, moving_fname, dims=[2048,3]):
 					moving_contour_points.append([pxl_to_mm_scale * coordinate[0], pxl_to_mm_scale * coordinate[1], pxl_to_mm_scale * z])
 			moving_contour_points = np.array(moving_contour_points)
 			
-			# Scale to 2048 points, then recenter and normalize the data.
-			if fixed_contour_points.shape[0] > dims[0]:
-				fixed_contour_points = fixed_contour_points[np.random.choice(fixed_contour_points.shape[0], size=dims[0], replace=False), :]
-			else:
-				fixed_contour_points = np.resize(fixed_contour_points, dims)
-
-			if moving_contour_points.shape[0] > dims[0]:
-				moving_contour_points = moving_contour_points[np.random.choice(moving_contour_points.shape[0], size=dims[0], replace=False), :]
-			else:
-				moving_contour_points = np.resize(moving_contour_points, dims)
-
 			if current_prostate_metrics == []:
 				fixed_contour_points_mean = np.mean(fixed_contour_points, axis=0)
 				fixed_contour_points = fixed_contour_points - fixed_contour_points_mean
@@ -170,9 +130,565 @@ def predict_mr_us_file(fname):
 	f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
 	f.write(header_string)
 	f.close()
+	'''
 	f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
 	f.write(header_string)
 	f.close()
+	# Load the model.
+	model = TPSTransformNet(2048)
+	model.load_weights(fname + '.h5')
+	'''
+
+	dims = [2048, 3]
+	if not os.path.exists('./mrus/prostates.npy') or not os.path.exists('./mrus/prostate_metrics.npy'):
+		all_prostates, metrics = get_mr_us_data('./mrus/us_labels_resampled800_post3.h5', './mrus/mr_labels_resampled800_post3.h5')
+		np.save('./mrus/prostates.npy', all_prostates)
+		np.save('./mrus/prostate_metrics.npy', metrics)
+	else:
+		all_prostates = np.load('./mrus/prostates.npy', allow_pickle=True)
+		metrics = np.load('./mrus/prostate_metrics.npy', allow_pickle=True)
+
+	max_iters = len(all_prostates)
+
+	# CTN - Contour to Contour
+	for i in range(max_iters):
+
+		# Fixed Prostate
+		fixed_prostate = all_prostates[i][0][0]
+		if fixed_prostate.shape[0] > dims[0]:
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate = np.resize(fixed_prostate, dims)
+		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+		# Fixed ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		fixed_ROIs = [x[0] for x in ROIs]
+		for r in range(len(fixed_ROIs)):
+			if fixed_ROIs[r].shape[0] > dims[0]:
+				fixed_ROIs[r] = fixed_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				fixed_ROIs[r] = np.resize(fixed_ROIs[r], dims)
+		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
+
+		# Moving Prostate
+		moving_prostate = all_prostates[i][0][1]
+		if moving_prostate.shape[0] > dims[0]:
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			moving_prostate = np.resize(moving_prostate, dims)
+		moving_prostate_u = np.unique(moving_prostate, axis=0)
+		# Moving ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		moving_ROIs = [x[1] for x in ROIs]
+		for r in range(len(moving_ROIs)):
+			if moving_ROIs[r].shape[0] > dims[0]:
+				moving_ROIs[r] = moving_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				moving_ROIs[r] = np.resize(moving_ROIs[r], dims)
+		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+
+		# Moving2Fixed Prostate
+		t = time.time()
+		pred = moving_prostate
+		#pred = model.predict([[np.array(fixed_prostate)],
+		#					  [np.array(moving_prostate)],
+		#					  [np.array(moving_prostate)]])
+		t = round(time.time() - t, 3)
+		pred_u = np.unique(pred, axis=0)
+		#pred_u = np.unique(pred[0], axis=0)
+		
+		# Moving2Fixed ROIs
+		pred_ROIs = moving_ROIs
+		#pred_ROIs = [model.predict([[np.array(fixed_prostate)],
+		#						   	[np.array(moving_prostate)],
+		#						   	[np.array(x)]]) for x in moving_ROIs]
+		pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
+		#pred_ROIs_u = [np.unique(x[0], axis=0) for x in pred_ROIs]
+		
+		# Scale the data so we can compute metrics with correct values.
+		fixed_metrics = metrics[i][0][0]
+		moving_metrics = metrics[i][0][1]
+
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, fixed_metrics[1], fixed_metrics[2])
+		moving_prostate_dn = denormalize_from_metrics(moving_prostate_u, moving_metrics[1], moving_metrics[2])
+		pred_dn = denormalize_from_metrics(pred_u, fixed_metrics[1], fixed_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate_dn)
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_dn]
+
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_dn)
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred_dn)
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_dn]
+
+		fig = plt.figure()
+		ax0 = fig.add_subplot(221, projection='3d')
+		ax0.set_title('Fixed')
+		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		
+		ax1 = fig.add_subplot(222, projection='3d')
+		ax1.set_title('Moving')
+		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+	
+		ax2 = fig.add_subplot(223, projection='3d')
+		ax2.set_title('Registered Contours')
+		#ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+	
+		ax3 = fig.add_subplot(224, projection='3d')
+		ax3.set_title('Registered ROIs')
+		for roi in fixed_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='y', marker='.', alpha=0.1)
+		for roi in pred_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
+
+		set_plot_ax_lims([ax0, ax1, ax2, ax3], limit=30)
+
+		ROIs_string = ''
+		for roi in range(5):
+			d_c = str(d_c_ROIs[roi]) if roi < len(d_c_ROIs) else ' '
+			d_h = str(d_h_ROIs[roi]) if roi < len(d_h_ROIs) else ' '
+			d_RE = str(d_RE_ROIs[roi]) if roi < len(d_RE_ROIs) else ' '
+			ROIs_string += str(d_c) + '\t' + str(d_h) + '\t' + str(d_RE) + '\t'
+		result_string = str(i + 1) + '\t' + str(t) + '\t' + \
+							str(d_c_p) + '\t' + str(d_h_p) + '\t' + \
+							ROIs_string + '\n'
+		f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
+
+		fig.suptitle('Patient ' + str(i + 1) + ' - MR to US')
+		plt.show()
+		plt.savefig('./prostate_results-' + fname + '/P2P-' + str(i + 1) + '.png', dpi=300)
+		plt.close()
+	'''
+	# CPD - Contour to Contour
+	for i in range(0, max_iters):
+
+		# Fixed Prostate
+		fixed_prostate = all_prostates[i][0][0]
+		if fixed_prostate.shape[0] > dims[0]:
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate = np.resize(fixed_prostate, dims)
+		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+		# Fixed ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		fixed_ROIs = [x[0] for x in ROIs]
+		for r in range(len(fixed_ROIs)):
+			if fixed_ROIs[r].shape[0] > dims[0]:
+				fixed_ROIs[r] = fixed_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				fixed_ROIs[r] = np.resize(fixed_ROIs[r], dims)
+		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
+
+		# Moving Prostate
+		moving_prostate = all_prostates[i][0][1]
+		if moving_prostate.shape[0] > dims[0]:
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			moving_prostate = np.resize(moving_prostate, dims)
+		moving_prostate_u = np.unique(moving_prostate, axis=0)
+		# Moving ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		moving_ROIs = [x[1] for x in ROIs]
+		for r in range(len(moving_ROIs)):
+			if moving_ROIs[r].shape[0] > dims[0]:
+				moving_ROIs[r] = moving_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				moving_ROIs[r] = np.resize(moving_ROIs[r], dims)
+		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+
+		# Moving2Fixed Prostate
+		reg = deformable_registration(**{'X':fixed_prostate, 'Y':moving_prostate, 'max_iterations':150})
+		t = time.time()
+		pred, params = reg.register()
+		t = round(time.time() - t, 3)
+		pred_u = np.unique(pred, axis=0)
+		# Moving2Fixed ROIs
+		pred_ROIs = [x + np.dot(gaussian_kernel(moving_prostate, x), params[1]) for x in moving_ROIs_u]
+		pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
+
+		# Scale the data so we can compute metrics with correct values.
+		fixed_metrics = metrics[i][0][0]
+		moving_metrics = metrics[i][0][1]
+
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, fixed_metrics[1], fixed_metrics[2])
+		moving_prostate_dn = denormalize_from_metrics(moving_prostate_u, moving_metrics[1], moving_metrics[2])
+		pred_dn = denormalize_from_metrics(pred_u, fixed_metrics[1], fixed_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate_dn)
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_dn]
+
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_dn)
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred_dn)
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_dn]
+
+		fig = plt.figure()
+		ax0 = fig.add_subplot(221, projection='3d')
+		ax0.set_title('Fixed')
+		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		
+		ax1 = fig.add_subplot(222, projection='3d')
+		ax1.set_title('Moving')
+		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+	
+		ax2 = fig.add_subplot(223, projection='3d')
+		ax2.set_title('Registered Contours')
+		#ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+	
+		ax3 = fig.add_subplot(224, projection='3d')
+		ax3.set_title('Registered ROIs')
+		for roi in fixed_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='y', marker='.', alpha=0.1)
+		for roi in pred_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
+
+		set_plot_ax_lims([ax0, ax1, ax2, ax3], limit=30)
+
+		ROIs_string = ''
+		for roi in range(5):
+			d_c = str(d_c_ROIs[roi]) if roi < len(d_c_ROIs) else ' '
+			d_h = str(d_h_ROIs[roi]) if roi < len(d_h_ROIs) else ' '
+			d_RE = str(d_RE_ROIs[roi]) if roi < len(d_RE_ROIs) else ' '
+			ROIs_string += str(d_c) + '\t' + str(d_h) + '\t' + str(d_RE) + '\t'
+		result_string = str(i + 1) + '\t' + str(t) + '\t' + \
+							str(d_c_p) + '\t' + str(d_h_p) + '\t' + \
+							ROIs_string + '\n'
+		f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
+
+		fig.suptitle('Patient ' + str(i + 1) + ' - MR to US')
+		plt.show()
+		plt.savefig('./prostate_results-' + fname + '/CPD-P2P-' + str(i + 1) + '.png', dpi=300)
+		plt.close()
+	'''
+
+def predict_mr_us_file_Slices(fname):
+	if not os.path.exists('./prostate_results-' + fname + '/'):
+			os.mkdir('./prostate_results-' + fname + '/')
+
+	header_string = 'P_ID\tTIME\tDC_P\tDH_P\tDC_R1\tDH_R1\tTRE_R1\tDC_R2\tDH_R2\tTRE_R2\tDC_R3\tDH_R3\tTRE_R3\tDC_R4\tDH_R4\tTRE_R4\tDC_R5\tDH_R5\tTRE_R5\n'
+	f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+	'''
+	f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+	# Load the model.
+	model = TPSTransformNet(2048)
+	model.load_weights(fname + '.h5')
+	'''
+	dims = [2048, 3]
+	if not os.path.exists('./mrus/prostates.npy') or not os.path.exists('./mrus/prostate_metrics.npy'):
+		all_prostates, metrics = get_mr_us_data('./mrus/us_labels_resampled800_post3.h5', './mrus/mr_labels_resampled800_post3.h5')
+		np.save('./mrus/prostates.npy', all_prostates)
+		np.save('./mrus/prostate_metrics.npy', metrics)
+	else:
+		all_prostates = np.load('./mrus/prostates.npy', allow_pickle=True)
+		metrics = np.load('./mrus/prostate_metrics.npy', allow_pickle=True)
+
+	max_iters = len(all_prostates)
+
+	# CTN - Contour to Contour
+	for i in range(max_iters):
+
+		# Fixed Prostate
+		fixed_prostate = all_prostates[i][0][0]
+
+		fixed_prostate_X = fixed_prostate[fixed_prostate[:, 0] <= 0.02, :]
+		fixed_prostate_X = fixed_prostate_X[fixed_prostate_X[:, 0] >= -0.02, :]
+		fixed_prostate_Y = fixed_prostate[fixed_prostate[:, 1] <= 0.02, :]
+		fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 1] >= -0.02, :]
+		fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 0] >= -0.02, :]
+		fixed_prostate_slices = np.concatenate((fixed_prostate_X, fixed_prostate_Y), axis=0)
+
+		if fixed_prostate.shape[0] > dims[0]:
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate = np.resize(fixed_prostate, dims)
+		if fixed_prostate_slices.shape[0] > dims[0]:
+			fixed_prostate_slices = fixed_prostate_slices[np.random.choice(fixed_prostate_slices.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate_slices = np.resize(fixed_prostate_slices, dims)
+
+		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+		# Fixed ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		fixed_ROIs = [x[0] for x in ROIs]
+		for r in range(len(fixed_ROIs)):
+			if fixed_ROIs[r].shape[0] > dims[0]:
+				fixed_ROIs[r] = fixed_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				fixed_ROIs[r] = np.resize(fixed_ROIs[r], dims)
+		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
+
+		# Moving Prostate
+		moving_prostate = all_prostates[i][0][1]
+		if moving_prostate.shape[0] > dims[0]:
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			moving_prostate = np.resize(moving_prostate, dims)
+		moving_prostate_u = np.unique(moving_prostate, axis=0)
+		# Moving ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		moving_ROIs = [x[1] for x in ROIs]
+		for r in range(len(moving_ROIs)):
+			if moving_ROIs[r].shape[0] > dims[0]:
+				moving_ROIs[r] = moving_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				moving_ROIs[r] = np.resize(moving_ROIs[r], dims)
+		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+
+		# Moving2Fixed Prostate
+		t = time.time()
+		pred = moving_prostate
+		#pred = model.predict([[np.array(fixed_prostate_slices)],
+		#					  [np.array(moving_prostate)],
+		#					  [np.array(moving_prostate)]])
+		t = round(time.time() - t, 3)
+		pred_u = np.unique(pred, axis=0)
+		#pred_u = np.unique(pred[0], axis=0)
+		
+		# Moving2Fixed ROIs
+		pred_ROIs = moving_ROIs
+		#pred_ROIs = [model.predict([[np.array(fixed_prostate_slices)],
+		#						   	[np.array(moving_prostate)],
+		#						   	[np.array(x)]]) for x in moving_ROIs]
+		pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
+		#pred_ROIs_u = [np.unique(x[0], axis=0) for x in pred_ROIs]
+		
+		# Scale the data so we can compute metrics with correct values.
+		fixed_metrics = metrics[i][0][0]
+		moving_metrics = metrics[i][0][1]
+
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, fixed_metrics[1], fixed_metrics[2])
+		moving_prostate_dn = denormalize_from_metrics(moving_prostate_u, moving_metrics[1], moving_metrics[2])
+		pred_dn = denormalize_from_metrics(pred_u, fixed_metrics[1], fixed_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate_dn)
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_dn]
+
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_dn)
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred_dn)
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_dn]
+
+		fig = plt.figure()
+		ax0 = fig.add_subplot(221, projection='3d')
+		ax0.set_title('Fixed')
+		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		
+		ax1 = fig.add_subplot(222, projection='3d')
+		ax1.set_title('Moving')
+		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+	
+		ax2 = fig.add_subplot(223, projection='3d')
+		ax2.set_title('Registered Contours')
+		#ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+	
+		ax3 = fig.add_subplot(224, projection='3d')
+		ax3.set_title('Registered ROIs')
+		for roi in fixed_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='y', marker='.', alpha=0.1)
+		for roi in pred_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
+
+		set_plot_ax_lims([ax0, ax1, ax2, ax3], limit=30)
+
+		ROIs_string = ''
+		for roi in range(5):
+			d_c = str(d_c_ROIs[roi]) if roi < len(d_c_ROIs) else ' '
+			d_h = str(d_h_ROIs[roi]) if roi < len(d_h_ROIs) else ' '
+			d_RE = str(d_RE_ROIs[roi]) if roi < len(d_RE_ROIs) else ' '
+			ROIs_string += str(d_c) + '\t' + str(d_h) + '\t' + str(d_RE) + '\t'
+		result_string = str(i + 1) + '\t' + str(t) + '\t' + \
+							str(d_c_p) + '\t' + str(d_h_p) + '\t' + \
+							ROIs_string + '\n'
+		f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
+
+		fig.suptitle('Patient ' + str(i + 1) + ' - MR to US')
+		plt.show()
+		plt.savefig('./prostate_results-' + fname + '/P2P-' + str(i + 1) + '.png', dpi=300)
+		plt.close()
+	
+	'''
+	# CPD - Contour to Contour
+	for i in range(0, max_iters):
+
+		# Fixed Prostate
+		fixed_prostate = all_prostates[i][0][0]
+
+		centerX = np.random.uniform(-0.33, 0.33)
+		fixed_prostate_X = fixed_prostate[fixed_prostate[:, 0] <= (centerX + 0.02), :]
+		fixed_prostate_X = fixed_prostate_X[fixed_prostate_X[:, 0] >= (centerX + -0.02), :]
+		centerY = np.random.uniform(-0.33, 0.33)
+		fixed_prostate_Y = fixed_prostate[fixed_prostate[:, 1] <= (centerY + 0.02), :]
+		fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 1] >= (centerY + -0.02), :]
+		fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 0] >= (centerX + -0.02), :]
+		fixed_prostate_slices = np.concatenate((fixed_prostate_X, fixed_prostate_Y), axis=0)
+
+		if fixed_prostate.shape[0] > dims[0]:
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate = np.resize(fixed_prostate, dims)
+		if fixed_prostate_slices.shape[0] > dims[0]:
+			fixed_prostate_slices = fixed_prostate_slices[np.random.choice(fixed_prostate_slices.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate_slices = np.resize(fixed_prostate_slices, dims)
+
+		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
+		# Fixed ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		fixed_ROIs = [x[0] for x in ROIs]
+		for r in range(len(fixed_ROIs)):
+			if fixed_ROIs[r].shape[0] > dims[0]:
+				fixed_ROIs[r] = fixed_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				fixed_ROIs[r] = np.resize(fixed_ROIs[r], dims)
+		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
+
+		# Moving Prostate
+		moving_prostate = all_prostates[i][0][1]
+		if moving_prostate.shape[0] > dims[0]:
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			moving_prostate = np.resize(moving_prostate, dims)
+		moving_prostate_u = np.unique(moving_prostate, axis=0)
+		# Moving ROIs
+		ROIs = [x for x in all_prostates[i][1:]]
+		moving_ROIs = [x[1] for x in ROIs]
+		for r in range(len(moving_ROIs)):
+			if moving_ROIs[r].shape[0] > dims[0]:
+				moving_ROIs[r] = moving_ROIs[r][np.random.choice(r.shape[0], size=dims[0], replace=False), :]
+			else:
+				moving_ROIs[r] = np.resize(moving_ROIs[r], dims)
+		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+
+		# Moving2Fixed Prostate
+		reg = deformable_registration(**{'X':fixed_prostate_slices, 'Y':moving_prostate, 'max_iterations':150})
+		t = time.time()
+		pred, params = reg.register()
+		t = round(time.time() - t, 3)
+		pred_u = np.unique(pred, axis=0)
+		# Moving2Fixed ROIs
+		pred_ROIs = [x + np.dot(gaussian_kernel(moving_prostate, x), params[1]) for x in moving_ROIs_u]
+		pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
+
+		# Scale the data so we can compute metrics with correct values.
+		fixed_metrics = metrics[i][0][0]
+		moving_metrics = metrics[i][0][1]
+
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, fixed_metrics[1], fixed_metrics[2])
+		moving_prostate_dn = denormalize_from_metrics(moving_prostate_u, moving_metrics[1], moving_metrics[2])
+		pred_dn = denormalize_from_metrics(pred_u, fixed_metrics[1], fixed_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate_dn)
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_dn]
+
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_dn)
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred_dn)
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_dn]
+
+		fig = plt.figure()
+		ax0 = fig.add_subplot(221, projection='3d')
+		ax0.set_title('Fixed')
+		ax0.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		
+		ax1 = fig.add_subplot(222, projection='3d')
+		ax1.set_title('Moving')
+		ax1.scatter(x_mp, y_mp, z_mp, c='r', marker='.', alpha=0.2)
+	
+		ax2 = fig.add_subplot(223, projection='3d')
+		ax2.set_title('Registered Contours')
+		#ax2.scatter(x_fp, y_fp, z_fp, c='y', marker='.', alpha=0.2)
+		ax2.scatter(x_pred, y_pred, z_pred, c='g', marker='.', alpha=0.2)
+	
+		ax3 = fig.add_subplot(224, projection='3d')
+		ax3.set_title('Registered ROIs')
+		for roi in fixed_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='y', marker='.', alpha=0.1)
+		for roi in pred_ROIs_xyz:
+			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
+
+		set_plot_ax_lims([ax0, ax1, ax2, ax3], limit=30)
+
+		ROIs_string = ''
+		for roi in range(5):
+			d_c = str(d_c_ROIs[roi]) if roi < len(d_c_ROIs) else ' '
+			d_h = str(d_h_ROIs[roi]) if roi < len(d_h_ROIs) else ' '
+			d_RE = str(d_RE_ROIs[roi]) if roi < len(d_RE_ROIs) else ' '
+			ROIs_string += str(d_c) + '\t' + str(d_h) + '\t' + str(d_RE) + '\t'
+		result_string = str(i + 1) + '\t' + str(t) + '\t' + \
+							str(d_c_p) + '\t' + str(d_h_p) + '\t' + \
+							ROIs_string + '\n'
+		f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
+		f.write(result_string)
+		f.close()
+
+		fig.suptitle('Patient ' + str(i + 1) + ' - MR to US')
+		plt.show()
+		plt.savefig('./prostate_results-' + fname + '/CPD-P2P-' + str(i + 1) + '.png', dpi=300)
+		plt.close()
+	'''
+
+def predict_mr_us_file_Landmarks(fname):
+	if not os.path.exists('./prostate_results-' + fname + '/'):
+			os.mkdir('./prostate_results-' + fname + '/')
+
+	header_string = 'P_ID\tTIME\tDC_P\tDH_P\tDC_R1\tDH_R1\tTRE_R1\tDC_R2\tDH_R2\tTRE_R2\tDC_R3\tDH_R3\tTRE_R3\tDC_R4\tDH_R4\tTRE_R4\tDC_R5\tDH_R5\tTRE_R5\n'
+	f = open('./prostate_results-' + fname + '/P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+	'''
+	f = open('./prostate_results-' + fname + '/CPD-P2P.txt', 'a')
+	f.write(header_string)
+	f.close()
+	'''
 
 	# Load the model.
 	model = load_model(fname + '.h5',
@@ -196,34 +712,45 @@ def predict_mr_us_file(fname):
 		# Fixed Prostate
 		fixed_prostate = all_prostates[i][0][0]
 		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
-		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			fixed_ROIs = [x[0] for x in ROIs]
+			fixed_ROIs_u = np.array([np.unique(x[0], axis=0) for x in ROIs])
+			num_points = sum(ROI.shape[0] for ROI in fixed_ROIs_u)
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims.shape[0] - num_points, replace=False), :]
+			for ROI in fixed_ROIs_u:
+				fixed_prostate = np.vstack((fixed_prostate, ROI))
 		# Fixed ROIs
 		ROIs = [x for x in all_prostates[i][1:]]
 		fixed_ROIs = [x[0] for x in ROIs]
 		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
-		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_u]
 
 		# Moving Prostate
 		moving_prostate = all_prostates[i][0][1]
+		moving_prostate_plot = moving_prostate
 		moving_prostate_u = np.unique(moving_prostate, axis=0)
-		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_u)
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			moving_ROIs = [x[1] for x in ROIs]
+			moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+			num_points = sum(ROI.shape[0] for ROI in moving_ROIs_u)
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims.shape[0] - num_points, replace=False), :]
+			for ROI in moving_ROIs_u:
+				moving_prostate = np.vstack((moving_prostate, ROI))
 		# Moving ROIs
 		ROIs = [x for x in all_prostates[i][1:]]
 		moving_ROIs = [x[1] for x in ROIs]
 		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
-		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
 
 		# Moving2Fixed Prostate
 		t = time.time()
-		#pred = moving_prostate
+		#pred = moving_prostate_plot
 		pred = model.predict([[np.array(fixed_prostate)],
 							  [np.array(moving_prostate)],
-							  [np.array(moving_prostate)]])
+							  [np.array(moving_prostate_plot)]])
 		t = round(time.time() - t, 3)
 		#pred_u = np.unique(pred, axis=0)
-		#x_pred, y_pred, z_pred = get_unique_plot_points(pred)
 		pred_u = np.unique(pred[0], axis=0)
-		x_pred, y_pred, z_pred = get_unique_plot_points(pred[0])
 		
 		# Moving2Fixed ROIs
 		#pred_ROIs = moving_ROIs
@@ -231,9 +758,32 @@ def predict_mr_us_file(fname):
 								   	[np.array(moving_prostate)],
 								   	[np.array(x)]]) for x in moving_ROIs]
 		#pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
-		#pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_u]
 		pred_ROIs_u = [np.unique(x[0], axis=0) for x in pred_ROIs]
-		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_u]
+		
+		# Scale the data so we can compute metrics with correct values.
+		fixed_metrics = metrics[i][0][0]
+		moving_metrics = metrics[i][0][1]
+
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, fixed_metrics[1], fixed_metrics[2])
+		moving_prostate_dn = denormalize_from_metrics(moving_prostate_u, moving_metrics[1], moving_metrics[2])
+		pred_dn = denormalize_from_metrics(pred_u, fixed_metrics[1], fixed_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate_dn)
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_dn]
+
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_dn)
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred_dn)
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_dn]
 
 		fig = plt.figure()
 		ax0 = fig.add_subplot(221, projection='3d')
@@ -256,20 +806,7 @@ def predict_mr_us_file(fname):
 		for roi in pred_ROIs_xyz:
 			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
 
-		set_plot_ax_lims([ax0, ax1, ax2, ax3])
-		
-		# Scale the data so we can compute metrics with correct values.
-		current_metrics = metrics[i][0][0]
-		pred_dn = denormalize_from_metrics(pred_u, current_metrics[1], current_metrics[2])
-		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, current_metrics[1], current_metrics[2])
-		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
-		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
-
-		fixed_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in fixed_ROIs_u]
-		pred_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in pred_ROIs_u]
-		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
-		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
-		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+		set_plot_ax_lims([ax0, ax1, ax2, ax3], limit=30)
 
 		ROIs_string = ''
 		for roi in range(5):
@@ -296,34 +833,72 @@ def predict_mr_us_file(fname):
 		# Fixed Prostate
 		fixed_prostate = all_prostates[i][0][0]
 		fixed_prostate_u = np.unique(fixed_prostate, axis=0)
-		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate)
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			fixed_ROIs = [x[0] for x in ROIs]
+			fixed_ROIs_u = np.array([np.unique(x[0], axis=0) for x in ROIs])
+			num_points = sum(ROI.shape[0] for ROI in fixed_ROIs_u)
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=fixed_prostate.shape[0] - num_points, replace=False), :]
+			for ROI in fixed_ROIs_u:
+				fixed_prostate = np.vstack((fixed_prostate, ROI))
 		# Fixed ROIs
 		ROIs = [x for x in all_prostates[i][1:]]
 		fixed_ROIs = [x[0] for x in ROIs]
 		fixed_ROIs_u = [np.unique(x[0], axis=0) for x in ROIs]
-		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_u]
 
 		# Moving Prostate
 		moving_prostate = all_prostates[i][0][1]
+		moving_prostate_plot = moving_prostate
 		moving_prostate_u = np.unique(moving_prostate, axis=0)
-		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_u)
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			moving_ROIs = [x[1] for x in ROIs]
+			moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+			num_points = sum(ROI.shape[0] for ROI in moving_ROIs_u)
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=moving_prostate.shape[0] - num_points, replace=False), :]
+			for ROI in moving_ROIs_u:
+				moving_prostate = np.vstack((moving_prostate, ROI))
 		# Moving ROIs
 		ROIs = [x for x in all_prostates[i][1:]]
 		moving_ROIs = [x[1] for x in ROIs]
 		moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
-		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
 
 		# Moving2Fixed Prostate
 		reg = deformable_registration(**{'X':fixed_prostate, 'Y':moving_prostate, 'max_iterations':150})
 		t = time.time()
 		pred, params = reg.register()
 		t = round(time.time() - t, 3)
+
+		pred = moving_prostate_plot + np.dot(gaussian_kernel(moving_prostate, moving_prostate_plot), params[1])
 		pred_u = np.unique(pred, axis=0)
-		x_pred, y_pred, z_pred = get_unique_plot_points(pred)
 		# Moving2Fixed ROIs
 		pred_ROIs = [x + np.dot(gaussian_kernel(moving_prostate, x), params[1]) for x in moving_ROIs_u]
 		pred_ROIs_u = [np.unique(x, axis=0) for x in pred_ROIs]
-		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_u]
+
+		# Scale the data so we can compute metrics with correct values.
+		fixed_metrics = metrics[i][0][0]
+		moving_metrics = metrics[i][0][1]
+
+		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, fixed_metrics[1], fixed_metrics[2])
+		moving_prostate_dn = denormalize_from_metrics(moving_prostate_u, moving_metrics[1], moving_metrics[2])
+		pred_dn = denormalize_from_metrics(pred_u, fixed_metrics[1], fixed_metrics[2])
+		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
+		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
+
+		fixed_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in fixed_ROIs_u]
+		pred_ROIs_dn = [denormalize_from_metrics(x, fixed_metrics[1], fixed_metrics[2]) for x in pred_ROIs_u]
+		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
+		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+
+		x_fp, y_fp, z_fp = get_unique_plot_points(fixed_prostate_dn)
+		fixed_ROIs_xyz = [get_unique_plot_points(x) for x in fixed_ROIs_dn]
+
+		x_mp, y_mp, z_mp = get_unique_plot_points(moving_prostate_dn)
+		moving_ROIs_xyz = [get_unique_plot_points(x) for x in moving_ROIs_u]
+
+		x_pred, y_pred, z_pred = get_unique_plot_points(pred_dn)
+		pred_ROIs_xyz = [get_unique_plot_points(x) for x in pred_ROIs_dn]
 
 		fig = plt.figure()
 		ax0 = fig.add_subplot(221, projection='3d')
@@ -346,20 +921,7 @@ def predict_mr_us_file(fname):
 		for roi in pred_ROIs_xyz:
 			ax3.scatter(roi[0], roi[1], roi[2], c='g', marker='.', alpha=0.1)
 
-		set_plot_ax_lims([ax0, ax1, ax2, ax3])
-
-		# Scale the data so we can compute metrics with correct values.
-		current_metrics = metrics[i][0][0]
-		pred_dn = denormalize_from_metrics(pred_u, current_metrics[1], current_metrics[2])
-		fixed_prostate_dn = denormalize_from_metrics(fixed_prostate_u, current_metrics[1], current_metrics[2])
-		d_c_p = round(chamfer(fixed_prostate_dn, pred_dn), 3)
-		d_h_p = round(hausdorff_2way(fixed_prostate_dn, pred_dn), 3)
-
-		fixed_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in fixed_ROIs_u]
-		pred_ROIs_dn = [denormalize_from_metrics(x, current_metrics[1], current_metrics[2]) for x in pred_ROIs_u]
-		d_c_ROIs = [round(chamfer(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
-		d_h_ROIs = [round(hausdorff_2way(fixed_ROIs_dn[x], pred_ROIs_dn[x]), 3) for x in range(len(fixed_ROIs_dn))]
-		d_RE_ROIs = [round(np.linalg.norm(np.mean(fixed_ROIs_dn[x], axis=0) - np.mean(pred_ROIs_dn[x], axis=0)), 3) for x in range(len(fixed_ROIs_dn))]
+		set_plot_ax_lims([ax0, ax1, ax2, ax3], limit=30)
 
 		ROIs_string = ''
 		for roi in range(5):
@@ -1107,14 +1669,18 @@ def predict_prostate_file(fname):
 			f.close()
 	'''
 
-predict_mr_us_file('ROI-lr1e-3-f0')
-predict_mr_us_file('ROI-lr1e-3-f1')
-predict_mr_us_file('ROI-lr1e-3-f2')
+#predict_mr_us_file('ours-1')
+#predict_mr_us_file('ours-ft1')
 
-predict_mr_us_file('ROI-lr1e-4-f0')
-predict_mr_us_file('ROI-lr1e-4-f1')
-predict_mr_us_file('ROI-lr1e-4-f2')
+#predict_mr_us_file_Slices('ours-2')
+#predict_mr_us_file_Slices('ours-ft2')
 
-predict_mr_us_file('ROI-lr1e-5-f0')
-predict_mr_us_file('ROI-lr1e-5-f1')
-predict_mr_us_file('ROI-lr1e-5-f2')
+#SWITCH TO TPS FROM CTN
+#predict_mr_us_file('baseline-1')
+#predict_mr_us_file('baseline-ft1')
+
+#predict_mr_us_file_Slices('baseline-2')
+#predict_mr_us_file_Slices('baseline-ft2')
+
+predict_mr_us_file_Slices('no-reg-2')
+predict_mr_us_file('no-reg-1')

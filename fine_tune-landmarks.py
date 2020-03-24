@@ -35,12 +35,15 @@ else:
 def fine_tune(learning_rate, freeze):
 	if not os.path.exists('./results' + str(sys.argv[1]) + '/'):
 		os.mkdir('./results' + str(sys.argv[1]) + '/')
+	if not os.path.exists('./logs' + str(sys.argv[1]) + '/'):
+		os.mkdir('./logs' + str(sys.argv[1]) + '/')
 
 	batch_size = 32
 	loss_func = chamfer_loss
 	loss_name = 'chamfer_loss'
 
-	wandb.init(project="ctn-chamfer-fine_tune", name='TPS + lr' + str(learning_rate) + ' freeze' + str(freeze), reinit=True)#, resume=RUN_ID)
+	#wandb.init(project="ctn-chamfer-fine_tune", name='500ROI + lr' + str(learning_rate) + ' freeze' + str(freeze), reinit=True)
+	wandb.init(project="ctn-chamfer", name='RAM-TEST')
 
 	if not os.path.exists('./mrus/prostates.npy') or not os.path.exists('./mrus/prostate_metrics.npy'):
 		all_prostates, _ = get_mr_us_data('./mrus/us_labels_resampled800_post3.h5', './mrus/mr_labels_resampled800_post3.h5')
@@ -51,7 +54,6 @@ def fine_tune(learning_rate, freeze):
 		metrics = np.load('./mrus/prostate_metrics.npy', allow_pickle=True)
 
 	max_iters = len(all_prostates)
-	dims = [2048, 3]
 	X1 = []
 	X2 = []
 	X3 = []
@@ -59,11 +61,25 @@ def fine_tune(learning_rate, freeze):
 	for i in range(0, max_iters // 2):
 
 		fixed_prostate = all_prostates[i][0][0]
-		fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			fixed_ROIs = [x[0] for x in ROIs]
+			fixed_ROIs_u = np.array([np.unique(x[0], axis=0) for x in ROIs])
+			num_points = sum(ROI.shape[0] for ROI in fixed_ROIs_u)
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=fixed_prostate.shape[0] - num_points, replace=False), :]
+			for ROI in fixed_ROIs_u:
+				fixed_prostate = np.vstack((fixed_prostate, ROI))
 		
 		moving_prostate = all_prostates[i][0][1]
-		moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
-		
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			moving_ROIs = [x[1] for x in ROIs]
+			moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+			num_points = sum(ROI.shape[0] for ROI in moving_ROIs_u)
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=moving_prostate.shape[0] - num_points, replace=False), :]
+			for ROI in moving_ROIs_u:
+				moving_prostate = np.vstack((moving_prostate, ROI))
+
 		# Make each data the Fixed, Moving, Moved
 		X1.append(np.array(fixed_prostate))
 		X2.append(np.array(moving_prostate))
@@ -79,10 +95,24 @@ def fine_tune(learning_rate, freeze):
 	for i in range(max_iters // 2, max_iters):
 
 		fixed_prostate = all_prostates[i][0][0]
-		fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			fixed_ROIs = [x[0] for x in ROIs]
+			fixed_ROIs_u = np.array([np.unique(x[0], axis=0) for x in ROIs])
+			num_points = sum(ROI.shape[0] for ROI in fixed_ROIs_u)
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=fixed_prostate.shape[0] - num_points, replace=False), :]
+			for ROI in fixed_ROIs_u:
+				fixed_prostate = np.vstack((fixed_prostate, ROI))
 		
 		moving_prostate = all_prostates[i][0][1]
-		moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
+		ROIs = [x for x in all_prostates[i][1:]]
+		if ROIs != []:
+			moving_ROIs = [x[1] for x in ROIs]
+			moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
+			num_points = sum(ROI.shape[0] for ROI in moving_ROIs_u)
+			moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=moving_prostate.shape[0] - num_points, replace=False), :]
+			for ROI in moving_ROIs_u:
+				moving_prostate = np.vstack((moving_prostate, ROI))
 
 		# Make each data the Fixed, Moving, Moved
 		X1.append(np.array(fixed_prostate))
@@ -100,9 +130,14 @@ def fine_tune(learning_rate, freeze):
 											 Y_test, 
 											 './results' + str(sys.argv[1]) + '/' + loss_name + '-val')
 
+	logdir = "./logs" + str(sys.argv[1]) + "/CTN_" + datetime.now().strftime("%Y%m%d-%H%M%S")
+	checkpointer = ModelCheckpoint(filepath='./logs' + str(sys.argv[1]) + '/CTN_Model_' + datetime.now().strftime("%Y%m%d-%H%M%S") + '.h5',
+								   verbose=0,
+								   save_best_only=True)
+
+	#model = load_model('no-fine-tune_BASE.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
 	init_epoch = 0
-	model = TPSTransformNet(2048)
-	model.load_weights('tps27.h5')#wandb.restore('model-best.h5').name)
+	model = ConditionalTransformerNet(2048, dropout=0.0, batch_norm=False)
 
 	if freeze == 1: # Freeze everything except output
 		trainable_layers = ['conv1d_17']
@@ -138,11 +173,12 @@ def fine_tune(learning_rate, freeze):
 	history = model.fit([X for X in X_train],
 						Y_train,
 						batch_size,
-						epochs=10000,
+						epochs=1000,
 						initial_epoch=init_epoch,
 						validation_data=([X for X in X_test], Y_test),
 						callbacks=[Prediction_Plot_Val, 
 								   Prediction_Plot_Trn,
+								   checkpointer,
 								   WandbCallback()],
 						verbose=2)
 

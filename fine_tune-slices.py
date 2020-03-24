@@ -39,8 +39,10 @@ def fine_tune(learning_rate, freeze):
 	batch_size = 32
 	loss_func = chamfer_loss
 	loss_name = 'chamfer_loss'
+	dims = [2048, 3]
 
-	wandb.init(project="ctn-chamfer-fine_tune", name='TPS + lr' + str(learning_rate) + ' freeze' + str(freeze), reinit=True)#, resume=RUN_ID)
+	#RUN_ID = '2onkrc2a'
+	wandb.init(project="ctn-chamfer-fine_tune", name='TPSSlices + lr' + str(learning_rate) + ' freeze' + str(freeze), reinit=True)#, resume=RUN_ID)
 
 	if not os.path.exists('./mrus/prostates.npy') or not os.path.exists('./mrus/prostate_metrics.npy'):
 		all_prostates, _ = get_mr_us_data('./mrus/us_labels_resampled800_post3.h5', './mrus/mr_labels_resampled800_post3.h5')
@@ -51,7 +53,6 @@ def fine_tune(learning_rate, freeze):
 		metrics = np.load('./mrus/prostate_metrics.npy', allow_pickle=True)
 
 	max_iters = len(all_prostates)
-	dims = [2048, 3]
 	X1 = []
 	X2 = []
 	X3 = []
@@ -59,13 +60,25 @@ def fine_tune(learning_rate, freeze):
 	for i in range(0, max_iters // 2):
 
 		fixed_prostate = all_prostates[i][0][0]
-		fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		fixed_prostate_X = fixed_prostate[fixed_prostate[:, 0] <= 0.02, :]
+		fixed_prostate_X = fixed_prostate_X[fixed_prostate_X[:, 0] >= -0.02, :]
+		fixed_prostate_Y = fixed_prostate[fixed_prostate[:, 1] <= 0.02, :]
+		fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 1] >= -0.02, :]
+		fixed_prostate_slices = np.concatenate((fixed_prostate_X, fixed_prostate_Y), axis=0)
+		if fixed_prostate.shape[0] > dims[0]:
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate = np.resize(fixed_prostate, dims)
+		if fixed_prostate_slices.shape[0] > dims[0]:
+			fixed_prostate_slices = fixed_prostate_slices[np.random.choice(fixed_prostate_slices.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate_slices = np.resize(fixed_prostate_slices, dims)
 		
 		moving_prostate = all_prostates[i][0][1]
 		moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
-		
+
 		# Make each data the Fixed, Moving, Moved
-		X1.append(np.array(fixed_prostate))
+		X1.append(np.array(fixed_prostate_slices))
 		X2.append(np.array(moving_prostate))
 		X3.append(np.array(moving_prostate))
 		Y.append(np.array(fixed_prostate))
@@ -79,13 +92,25 @@ def fine_tune(learning_rate, freeze):
 	for i in range(max_iters // 2, max_iters):
 
 		fixed_prostate = all_prostates[i][0][0]
-		fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		fixed_prostate_X = fixed_prostate[fixed_prostate[:, 0] <= 0.02, :]
+		fixed_prostate_X = fixed_prostate_X[fixed_prostate_X[:, 0] >= -0.02, :]
+		fixed_prostate_Y = fixed_prostate[fixed_prostate[:, 1] <= 0.02, :]
+		fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 1] >= -0.02, :]
+		fixed_prostate_slices = np.concatenate((fixed_prostate_X, fixed_prostate_Y), axis=0)
+		if fixed_prostate.shape[0] > dims[0]:
+			fixed_prostate = fixed_prostate[np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate = np.resize(fixed_prostate, dims)
+		if fixed_prostate_slices.shape[0] > dims[0]:
+			fixed_prostate_slices = fixed_prostate_slices[np.random.choice(fixed_prostate_slices.shape[0], size=dims[0], replace=False), :]
+		else:
+			fixed_prostate_slices = np.resize(fixed_prostate_slices, dims)
 		
 		moving_prostate = all_prostates[i][0][1]
 		moving_prostate = moving_prostate[np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False), :]
 
 		# Make each data the Fixed, Moving, Moved
-		X1.append(np.array(fixed_prostate))
+		X1.append(np.array(fixed_prostate_slices))
 		X2.append(np.array(moving_prostate))
 		X3.append(np.array(moving_prostate))
 		Y.append(np.array(fixed_prostate))
@@ -100,7 +125,8 @@ def fine_tune(learning_rate, freeze):
 											 Y_test, 
 											 './results' + str(sys.argv[1]) + '/' + loss_name + '-val')
 
-	init_epoch = 0
+	#model = load_model('no-fine-tune_BASE.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
+	init_epoch = 0 #wandb.run.step
 	model = TPSTransformNet(2048)
 	model.load_weights('tps27.h5')#wandb.restore('model-best.h5').name)
 
@@ -149,6 +175,4 @@ def fine_tune(learning_rate, freeze):
 	model.save('./results' + str(sys.argv[1]) + '/CTN-' + loss_name + '.h5')
 	model.save(os.path.join(wandb.run.dir, "model.h5"))
 
-#fine_tune(learning_rate=float(sys.argv[2]), freeze=0)
-#fine_tune(learning_rate=float(sys.argv[2]), freeze=1)
-#fine_tune(learning_rate=float(sys.argv[2]), freeze=2)
+fine_tune(learning_rate=float(sys.argv[2]), freeze=0)
