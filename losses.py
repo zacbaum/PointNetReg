@@ -5,6 +5,10 @@ import tensorflow_probability as tfp
 tfd = tfp.distributions
 
 def chamfer_distance(y_true, y_pred):
+	if K.int_shape(y_pred)[1] == 4:
+		y_pred = y_pred[:, :-1]
+		y_true = y_true[:, :-1]
+
 	row_norms_true = tf.reduce_sum(tf.square(y_true), axis=1)
 	row_norms_true = tf.reshape(row_norms_true, [-1, 1])
 	row_norms_pred = tf.reduce_sum(tf.square(y_pred), axis=1)
@@ -60,6 +64,9 @@ def gmm_nll_loss(covariance_matrix_diag, mix_param_val):
 	def gmm_nll_batched(y_true, y_pred):
 
 		def gmm_nll(y_true, y_pred):
+			if K.int_shape(y_pred)[1] == 4:
+				y_pred = y_pred[:, :-1]
+				y_true = y_true[:, :-1]
 
 			mix_param = tf.constant(mix_param_val)
 

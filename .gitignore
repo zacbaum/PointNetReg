@@ -133,3 +133,4 @@ dmypy.json
 *.xlsx
 *.filepart
 testK.py
+gan.py
