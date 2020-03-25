@@ -8,15 +8,16 @@ import random
 from itertools import product
 
 class DataGenerator(Sequence):
-	def __init__(self, data, batch_size, dims=3, shuffle=True, deform=False, part=0, center=False):
+	def __init__(self, data, batch_size, dims=3, shuffle=True, rotate=45, displace=1, deform=False, part=0):
 		self.data = data
 		self.batch_size = batch_size
 		self.dims = dims
 
 		self.shuffle = shuffle
+		self.rotate = rotate
+		self.displace = displace
 		self.deform = deform
 		self.part = part
-		self.center = center
 
 		self.nb_sample = self.data['data'].shape[0]
 		self.indexes = np.arange(self.nb_sample)
@@ -61,20 +62,15 @@ class DataGenerator(Sequence):
 				moving = moving - np.mean(moving, axis=0)
 
 			# Rotate, translate.
-			y, p, r = ypr_rand(-45, 45)	
+			y, p, r = ypr_rand(-self.rotate, self.rotate)	
 			R = e2r(y, p, r)
-			d = d_rand(-1, 1)
+			d = d_rand(-self.displace, self.displace)
 			T = get_T(R, d)
 			moving_with_ones = np.ones((dims[0], dims[1] + 1))
 			moving_with_ones[:,:-1] = moving
 			moving = np.dot(T, moving_with_ones.T).T[:, :-1]
-			
-			# Recenter.
-			if self.center:
-				moving = moving - np.mean(moving, axis=0)
 			to_reg = moving
 
-			
 			# Take part(s) from point set(s).
 			if self.part > 0: # Register a part to whole
 				axis = np.random.randint(0, 3)
