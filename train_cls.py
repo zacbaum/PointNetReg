@@ -12,9 +12,9 @@ from callbacks import Prediction_Plotter
 from data_loader import DataGenerator
 from datetime import datetime
 from keras import backend as K
-from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow.keras.optimizers import Adam
-from losses import chamfer_loss, variational_loss
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+from tensorflow.keras.optimizers import Adam, Nadam
+from losses import chamfer_loss, gmm_nll_loss
 from model import ConditionalTransformerNet, TPSTransformNet, MatMul
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
@@ -38,7 +38,7 @@ else:
 #config.gpu_options.per_process_gpu_memory_fraction  = 0.45
 #set_session(tf.Session(config=config))
 
-def main():
+def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform):
 	train_file = './ModelNet40/ply_data_train.h5'
 	train = h5py.File(train_file, mode='r')
 	test_file = './ModelNet40/ply_data_test.h5'
@@ -46,32 +46,32 @@ def main():
 
 	if not os.path.exists('./results' + str(sys.argv[2]) + '/'):
 		os.mkdir('./results' + str(sys.argv[2]) + '/')
-	if not os.path.exists('./logs' + str(sys.argv[2]) + '/'):
-		os.mkdir('./logs' + str(sys.argv[2]) + '/')
-
-	batch_size = 32
-	load_from_file = False
 
 	loss_name = str(sys.argv[1])
 	loss_func = None
-	learning_rate = float(sys.argv[3])
-
-	wandb.init(project="ctn-chamfer", name='27TPS0.01 lr1e-3')
+	metrics = []
 
 	if loss_name == 'chamfer_loss':
 		loss_func = chamfer_loss
 
-	if loss_name == 'variational_loss':
-		loss_func = variational_loss
+	if loss_name == 'gmm':
+		loss_func = gmm_nll_loss(0.01, 0.1)
+		metrics = [chamfer_loss]
 
 	train = DataGenerator(train,
 						  batch_size,
-						  deform=True)
+ 						  shuffle=True,
+ 						  rotate=rotate,
+ 						  displace=displace,
+ 						  deform=deform)
 
 	val = DataGenerator(test,
 						batch_size,
-						deform=True)
-	
+ 						shuffle=False,
+ 						rotate=rotate,
+ 						displace=displace,
+ 						deform=deform)
+
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches
 	max_iter = 1      # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
@@ -86,51 +86,62 @@ def main():
 	first_val_X = val_data[0]
 	first_val_Y = val_labels[0]
 	Prediction_Plot_Val = Prediction_Plotter(first_val_X,
-											 first_val_Y, 
+											 first_val_Y,
+											 500 * load - 1, 
 											 './results' + str(sys.argv[2]) + '/' + loss_name + '-val')
 	fixed_len = val_data[0][0].shape[1]
 	moving_len = val_data[0][1].shape[1]
 	assert (fixed_len == moving_len)
 	num_points = fixed_len
 
-	logdir = "./logs" + str(sys.argv[2]) + "/CTN_" + datetime.now().strftime("%Y%m%d-%H%M%S")
-	checkpointer = ModelCheckpoint(filepath='./logs' + str(sys.argv[2]) + '/CTN_Model_' + datetime.now().strftime("%Y%m%d-%H%M%S") + '.h5',
-								   verbose=0,
-								   save_best_only=True)
-
-	if load_from_file:
-		model = load_model('CTN-chamfer_loss.h5', custom_objects={'MatMul':MatMul, 'chamfer_loss':chamfer_loss})
-		initial_epoch = 1000
-	else:
-		#model = ConditionalTransformerNet(num_points, dropout=0.0, batch_norm=False)
-		model = TPSTransformNet(num_points, sigma=0.01, dropout=0.0, batch_norm=False)
-		optimizer = Adam(lr=learning_rate)
-		model.compile(optimizer=optimizer,
-					  loss=loss_func)
-		initial_epoch = 0
+	model = ConditionalTransformerNet(num_points,
+									  n_subsets=n_subsets,
+									  pn_filters=[128, 1024],
+									  ctn_filters=[1024, 512, 256, 128, 64])
+	initial_epoch = 0
+	if load:
+		model.load_weights(wandb.restore('model-best.h5').name)
+		initial_epoch = wandb.run.step
+	
+	optimizer = Adam(lr=learning_rate)
+	model.compile(optimizer=optimizer,
+				  loss=loss_func,
+				  metrics=metrics)
 	
 	f = h5py.File(train_file, mode='r')
 	num_train = f['data'].shape[0]
 	f = h5py.File(test_file, mode='r')
 	num_val = f['data'].shape[0]
 
+	if not load:
+		wandb.init(project="ctn-chamfer", name='regP fullCTN lr1e-3 CURRICULUM', id='0004')
+	else:
+		wandb.init(project="ctn-chamfer", name='regP fullCTN lr1e-3 CURRICULUM', resume='0004')
+
 	history = model.fit_generator(train,
 								  steps_per_epoch=num_train // batch_size,
-								  epochs=2000,
+								  epochs=500 * (load + 1),
 								  initial_epoch=initial_epoch,
 								  validation_data=val,
 								  validation_steps=num_val // batch_size,
-								  callbacks=[Prediction_Plot_Val, 
-											 checkpointer,
-											 WandbCallback()],
-								  verbose=2,
-								  use_multiprocessing=True,
-								  workers=16,
-								  max_queue_size=100)
+								  callbacks=[Prediction_Plot_Val,
+								  			 EarlyStopping(patience=50),
+											 WandbCallback(log_weights=True)],
+								  verbose=1)
 
-	model.save('./results' + str(sys.argv[2]) + '/CTN-' + loss_name + '.h5')
 	model.save(os.path.join(wandb.run.dir, "model.h5"))
 
 if __name__ == '__main__':
 
-	main()
+	learning_rate = float(sys.argv[3])
+	batch_size = int(sys.argv[4])
+	n_subsets = int(sys.argv[5])
+	# order, batch_size, learning_rate, n_subsets, rotate, displace, deform
+	train(0, batch_size, learning_rate, n_subsets,      0,      0.5,  False)
+	train(1, batch_size, learning_rate, n_subsets,      0,      1.0,  False)
+	train(2, batch_size, learning_rate, n_subsets,     15,      1.0,  False)
+	train(3, batch_size, learning_rate, n_subsets,     30,      1.0,  False)
+	train(4, batch_size, learning_rate, n_subsets,     45,      1.0,  False)
+	train(5, batch_size, learning_rate, n_subsets,     60,      1.0,  False)
+	train(6, batch_size, learning_rate, n_subsets,     60,      1.0,   True)
+
