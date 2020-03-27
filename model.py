@@ -178,15 +178,16 @@ def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=
 		return subsets[0]
 
 	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
-	fixed_ss = Lambda(drop_batch_points, name='Fixed_Subsampled')(fixed)
 	moved = Input(shape=(num_points, dims), name='Moved_Model')
-	moved_ss = Lambda(drop_batch_points, name='Moved_Subsampled')(moved)
+	if n_subsets > 1:
+		fixed = Lambda(drop_batch_points, name='Fixed_Subsampled')(fixed)
+		moved = Lambda(drop_batch_points, name='Moved_Subsampled')(moved)
 	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
-	#pointNet = PointNet_features(int(num_points / n_subsets), dims, pn_filters)
-	pointNet = Point_features(int(num_points / n_subsets), dims, pn_filters)
-	fixed_pointNet = pointNet(fixed_ss)
-	moving_pointNet = pointNet(moved_ss)
+	pointNet = PointNet_features(int(num_points / n_subsets), dims, pn_filters)
+	#pointNet = Point_features(int(num_points / n_subsets), dims, pn_filters)
+	fixed_pointNet = pointNet(fixed)
+	moving_pointNet = pointNet(moved)
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
 	point_features_matrix = RepeatVector(num_points)(point_features)
