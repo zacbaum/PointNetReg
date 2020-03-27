@@ -7,15 +7,14 @@ matplotlib.use('AGG')
 import numpy as np
 
 class Prediction_Plotter(tf.keras.callbacks.Callback):
-    def __init__(self, X, Y, start_epoch, fname_tag, debug=False):
+    def __init__(self, X, Y, fname_tag, debug=False):
         self.X = X
         self.Y = Y
-        self.start_epoch = start_epoch
         self.fname_tag = fname_tag
         self.debug = debug
 
     def on_train_begin(self, logs={}):
-        self.on_epoch_end(self.start_epoch)
+        self.on_epoch_end(-1)
 
     def on_epoch_end(self, epoch, logs={}):
         pred = self.model.predict_on_batch(self.X)
