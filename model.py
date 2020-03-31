@@ -42,15 +42,15 @@ def PointNet_features(input_len, dimensions=3, filters=[128, 1024]):
 	input_points = Input(shape=(input_len, dimensions))
 	# input transformation net
 	x = Conv1D(64, 1, activation='relu')(input_points)
-	x = BatchNormalization()(x)
+	#x = BatchNormalization()(x)
 	for i in filters:
 		x = Conv1D(i, 1, activation='relu')(x)
-		x = BatchNormalization()(x)
+		#x = BatchNormalization()(x)
 	x = MaxPooling1D(pool_size=input_len)(x)
 
 	for i in [512, 256]:
 		x = Dense(i, activation='relu')(x)
-		x = BatchNormalization()(x)
+		#x = BatchNormalization()(x)
 
 	x = Dense(dimensions * dimensions, weights=[np.zeros([256, dimensions * dimensions]), np.eye(dimensions).flatten().astype(np.float32)])(x)
 	input_T = Reshape((dimensions, dimensions))(x)
@@ -59,28 +59,28 @@ def PointNet_features(input_len, dimensions=3, filters=[128, 1024]):
 	g = MatMul()([input_points, input_T])
 	for i in [64, 64]:
 		g = Conv1D(i, 1, activation='relu')(g)
-		g = BatchNormalization()(g)
+		#g = BatchNormalization()(g)
 
 	# feature transform net
 	f = Conv1D(i, 1, activation='relu')(g)
-	f = BatchNormalization()(f)
+	#f = BatchNormalization()(f)
 	for i in filters:
 		f = Conv1D(i, 1, activation='relu')(f)
-		f = BatchNormalization()(f)
+		#f = BatchNormalization()(f)
 	f = MaxPooling1D(pool_size=input_len)(f)
 	for i in [512, 256]:
 		f = Dense(i, activation='relu')(f)
-		f = BatchNormalization()(f)
+		#f = BatchNormalization()(f)
 	f = Dense(64 * 64, weights=[np.zeros([256, 64 * 64]), np.eye(64).flatten().astype(np.float32)])(f)
 	feature_T = Reshape((64, 64))(f)
 
 	# forward net
 	g = MatMul()([g, feature_T])
 	g = Conv1D(64, 1, activation='relu')(g)
-	g = BatchNormalization()(g)
+	#g = BatchNormalization()(g)
 	for i in filters:
 		g = Conv1D(i, 1, activation='relu')(g)
-		g = BatchNormalization()(g)
+		#g = BatchNormalization()(g)
 
 	# global feature
 	global_feature = MaxPooling1D(pool_size=input_len)(g)
@@ -95,10 +95,8 @@ def Point_features(input_len, dimensions=3, filters=[128, 1024]):
 	input_points = Input(shape=(input_len, dimensions))
 	# input transformation net
 	x = Conv1D(64, 1, activation='relu')(input_points)
-	x = BatchNormalization()(x)
 	for i in filters:
 		x = Conv1D(i, 1, activation='relu')(x)
-		x = BatchNormalization()(x)
 	x = MaxPooling1D(pool_size=input_len)(x)
 	x = Reshape((filters[-1],))(x)
 
@@ -180,14 +178,19 @@ def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', dropout=
 	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
 	moved = Input(shape=(num_points, dims), name='Moved_Model')
 	if n_subsets > 1:
-		fixed = Lambda(drop_batch_points, name='Fixed_Subsampled')(fixed)
-		moved = Lambda(drop_batch_points, name='Moved_Subsampled')(moved)
+		fixed_ss = Lambda(drop_batch_points, name='Fixed_Subsampled')(fixed)
+		moved_ss = Lambda(drop_batch_points, name='Moved_Subsampled')(moved)
 	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
 	pointNet = PointNet_features(int(num_points / n_subsets), dims, pn_filters)
 	#pointNet = Point_features(int(num_points / n_subsets), dims, pn_filters)
-	fixed_pointNet = pointNet(fixed)
-	moving_pointNet = pointNet(moved)
+
+	if n_subsets > 1:
+		fixed_pointNet = pointNet(fixed_ss)
+		moving_pointNet = pointNet(moved_ss)
+	else:
+		fixed_pointNet = pointNet(fixed)
+		moving_pointNet = pointNet(moved)
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
 	point_features_matrix = RepeatVector(num_points)(point_features)
