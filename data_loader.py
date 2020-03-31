@@ -54,6 +54,7 @@ class DataGenerator(Sequence):
 			# Normalize between [-1, 1] and mean center.
 			fixed = 2 * (fixed - np.min(fixed)) / (np.ptp(fixed) + eps) - 1
 			fixed = fixed - np.mean(fixed, axis=0)
+			ground_truth = fixed
 			moving = fixed
 
 			# Deform.
@@ -73,16 +74,17 @@ class DataGenerator(Sequence):
 
 			# Take part(s) from point set(s).
 			if self.part > 0: # Register a part to whole
-				axis = np.random.randint(0, 3)
-				moving = moving[moving[:, axis].argsort()]
+				axis_moving = np.random.randint(0, 3)
+				moving = moving[moving[:, axis_moving].argsort()]
 				moving = moving[int(0.5 * dims[0]):]
 				moving = np.resize(moving, dims)
 				if self.part > 1: # Register a part to a part
-					axis = np.random.randint(0, 3)
-					fixed = fixed[fixed[:, axis].argsort()]
+					axis_fixed = np.random.randint(0, 3)
+					while axis_moving == axis_fixed:
+						axis_fixed = np.random.randint(0, 3)
+					fixed = fixed[fixed[:, axis_fixed].argsort()]
 					fixed = fixed[:int(0.5 * dims[0])]
 					fixed = np.resize(fixed, dims)
-					#TODO: Make sure that the to-reg is the same part as this fixed part
 
 			if self.dims == 4:
 				moving_with_ones = np.ones((dims[0], dims[1] + 1))
@@ -98,7 +100,7 @@ class DataGenerator(Sequence):
 			X1.append(fixed)
 			X2.append(moving)
 			X3.append(to_reg)
-			Y.append(fixed)
+			Y.append(ground_truth)
 		return [np.array(X1), np.array(X2), np.array(X3)], np.array(Y)
 				
 
