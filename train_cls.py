@@ -12,8 +12,8 @@ from callbacks import Prediction_Plotter
 from data_loader import DataGenerator
 from datetime import datetime
 from keras import backend as K
-from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
-from tensorflow.keras.optimizers import Adam, Nadam
+from tensorflow.keras.callbacks import ModelCheckpoint
+from tensorflow.keras.optimizers import Adam
 from losses import chamfer_loss, gmm_nll_loss
 from model import ConditionalTransformerNet, TPSTransformNet, MatMul
 from mpl_toolkits.mplot3d import Axes3D
@@ -38,7 +38,7 @@ else:
 #config.gpu_options.per_process_gpu_memory_fraction  = 0.45
 #set_session(tf.Session(config=config))
 
-def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform):
+def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, epochs):
 	train_file = './ModelNet40/ply_data_train.h5'
 	train = h5py.File(train_file, mode='r')
 	test_file = './ModelNet40/ply_data_test.h5'
@@ -87,7 +87,6 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform):
 	first_val_Y = val_labels[0]
 	Prediction_Plot_Val = Prediction_Plotter(first_val_X,
 											 first_val_Y,
-											 500 * load - 1, 
 											 './results' + str(sys.argv[2]) + '/' + loss_name + '-val')
 	fixed_len = val_data[0][0].shape[1]
 	moving_len = val_data[0][1].shape[1]
@@ -96,7 +95,7 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform):
 
 	model = ConditionalTransformerNet(num_points,
 									  n_subsets=n_subsets,
-									  pn_filters=[128, 1024],
+									  pn_filters=[128, 256, 512, 1024],
 									  ctn_filters=[1024, 512, 256, 128, 64])
 	initial_epoch = 0
 	if load:
@@ -114,18 +113,26 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform):
 	num_val = f['data'].shape[0]
 
 	if not load:
-		wandb.init(project="ctn-chamfer", name='regP fullCTN lr1e-3 CURRICULUM', id='0004')
+		wandb.init(project="ctn-chamfer", name='deepPN-noBN lr1e-3', id='0042')
 	else:
-		wandb.init(project="ctn-chamfer", name='regP fullCTN lr1e-3 CURRICULUM', resume='0004')
+		wandb.init(project="ctn-chamfer", name='deepPN-noBN lr1e-3', resume='0042')
+
+	print('Section:         ' + str(load))
+	print('Batch Size:      ' + str(batch_size))
+	print('LR:              ' + str(learning_rate))
+	print('Subsets:         ' + str(n_subsets))
+	print('Rotation:        ' + str(rotate))
+	print('Displacement:    ' + str(displace))
+	print('Deformation:     ' + str(deform))
+	print('Epochs to Train: ' + str(epochs) + '\n')
 
 	history = model.fit_generator(train,
 								  steps_per_epoch=num_train // batch_size,
-								  epochs=500 * (load + 1),
+								  epochs=initial_epoch + epochs,
 								  initial_epoch=initial_epoch,
 								  validation_data=val,
 								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Val,
-								  			 EarlyStopping(patience=50),
 											 WandbCallback(log_weights=True)],
 								  verbose=1)
 
@@ -136,12 +143,6 @@ if __name__ == '__main__':
 	learning_rate = float(sys.argv[3])
 	batch_size = int(sys.argv[4])
 	n_subsets = int(sys.argv[5])
-	# order, batch_size, learning_rate, n_subsets, rotate, displace, deform
-	train(0, batch_size, learning_rate, n_subsets,      0,      0.5,  False)
-	train(1, batch_size, learning_rate, n_subsets,      0,      1.0,  False)
-	train(2, batch_size, learning_rate, n_subsets,     15,      1.0,  False)
-	train(3, batch_size, learning_rate, n_subsets,     30,      1.0,  False)
-	train(4, batch_size, learning_rate, n_subsets,     45,      1.0,  False)
-	train(5, batch_size, learning_rate, n_subsets,     60,      1.0,  False)
-	train(6, batch_size, learning_rate, n_subsets,     60,      1.0,   True)
-
+	
+	# order, batch_size, learning_rate, n_subsets, rotate, displace, deform, epochs
+	train(0, batch_size, learning_rate, n_subsets,     45,     1.00,   True,   2000)
