@@ -96,6 +96,9 @@ class DataGenerator(Sequence):
 				fixed_with_ones = np.ones((dims[0], dims[1] + 1))
 				fixed_with_ones[:,:-1] = fixed
 				fixed = fixed_with_ones
+				gt_with_ones = np.ones((dims[0], dims[1] + 1))
+				gt_with_ones[:,:-1] = ground_truth
+				ground_truth = gt_with_ones
 
 			X1.append(fixed)
 			X2.append(moving)
