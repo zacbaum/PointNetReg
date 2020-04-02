@@ -54,23 +54,8 @@ class DataGenerator(Sequence):
 			# Normalize between [-1, 1] and mean center.
 			fixed = 2 * (fixed - np.min(fixed)) / (np.ptp(fixed) + eps) - 1
 			fixed = fixed - np.mean(fixed, axis=0)
-			ground_truth = fixed
 			moving = fixed
-
-			# Deform.
-			if self.deform:
-				moving = compute_RBF_defm(moving)
-				moving = moving - np.mean(moving, axis=0)
-
-			# Rotate, translate.
-			y, p, r = ypr_rand(-self.rotate, self.rotate)	
-			R = e2r(y, p, r)
-			d = d_rand(-self.displace, self.displace)
-			T = get_T(R, d)
-			moving_with_ones = np.ones((dims[0], dims[1] + 1))
-			moving_with_ones[:,:-1] = moving
-			moving = np.dot(T, moving_with_ones.T).T[:, :-1]
-			to_reg = moving
+			ground_truth = fixed
 
 			# Take part(s) from point set(s).
 			if self.part > 0: # Register a part to whole
@@ -85,7 +70,39 @@ class DataGenerator(Sequence):
 					fixed = fixed[fixed[:, axis_fixed].argsort()]
 					fixed = fixed[:int(0.5 * dims[0])]
 					fixed = np.resize(fixed, dims)
+					ground_truth = np.unique(np.vstack((moving, fixed)), axis=0)
+					ground_truth = np.resize(ground_truth, dims)
+				to_reg = ground_truth
 
+			# Deform.
+			if self.deform:
+				sigma = np.random.normal()
+				c = np.random.normal(loc=0, scale=0.1, size=(10, 3))
+				x = np.random.uniform(low=-1, high=1, size=(10, 3))
+				k = compute_RBF(x, moving, sigma)
+				moving = np.matmul(k.T, c) + moving
+				moving_mean = np.mean(moving, axis=0)
+				moving = moving - moving_mean
+				if self.part > 0:
+					k = compute_RBF(x, to_reg, sigma)
+					to_reg = np.matmul(k.T, c) + to_reg
+					to_reg = to_reg - moving_mean
+
+			# Rotate, translate.
+			y, p, r = ypr_rand(-self.rotate, self.rotate)	
+			R = e2r(y, p, r)
+			d = d_rand(-self.displace, self.displace)
+			T = get_T(R, d)
+			moving_with_ones = np.ones((dims[0], dims[1] + 1))
+			moving_with_ones[:,:-1] = moving
+			moving = np.dot(T, moving_with_ones.T).T[:, :-1]
+			if not self.part:
+				to_reg = moving
+			else:
+				to_reg_with_ones = np.ones((dims[0], dims[1] + 1))
+				to_reg_with_ones[:,:-1] = to_reg
+				to_reg = np.dot(T, to_reg_with_ones.T).T[:, :-1]
+			
 			if self.dims == 4:
 				moving_with_ones = np.ones((dims[0], dims[1] + 1))
 				moving_with_ones[:,:-1] = moving
