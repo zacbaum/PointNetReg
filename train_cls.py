@@ -33,11 +33,6 @@ else:
 	from keras.models import load_model
 	from keras.engine.topology import Layer
 
-#from keras.backend.tensorflow_backend import set_session
-#config = tf.ConfigProto()
-#config.gpu_options.per_process_gpu_memory_fraction  = 0.45
-#set_session(tf.Session(config=config))
-
 def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, epochs):
 	train_file = './ModelNet40/ply_data_train.h5'
 	train = h5py.File(train_file, mode='r')
@@ -54,7 +49,7 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, 
 	if loss_name == 'chamfer_loss':
 		loss_func = chamfer_loss
 
-	if loss_name == 'gmm':
+	if loss_name == 'gmm_nll_loss':
 		loss_func = gmm_nll_loss(0.01, 0.1)
 		metrics = [chamfer_loss]
 
@@ -63,14 +58,14 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, 
  						  shuffle=True,
  						  rotate=rotate,
  						  displace=displace,
- 						  deform=deform)
+ 						  deform=deform, part=0)
 
 	val = DataGenerator(test,
 						batch_size,
  						shuffle=False,
  						rotate=rotate,
  						displace=displace,
- 						deform=deform)
+ 						deform=deform, part=0)
 
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches
@@ -93,13 +88,19 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, 
 	assert (fixed_len == moving_len)
 	num_points = fixed_len
 
+	if not load:
+		wandb.init(project="ctn-chamfer", name='P small+add lr1e-3', id='0062')
+	else:
+		wandb.init(project="ctn-chamfer", name='P small+add lr1e-3', resume='0062')
+
 	model = ConditionalTransformerNet(num_points,
 									  n_subsets=n_subsets,
-									  pn_filters=[128, 256, 512, 1024],
+									  pn_filters=[64, 128, 1024],
 									  ctn_filters=[1024, 512, 256, 128, 64])
 	initial_epoch = 0
 	if load:
-		model.load_weights(wandb.restore('model-best.h5').name)
+		model = load_model(wandb.restore('model-best.h5').name,
+						   custom_objects={'MatMul':MatMul, loss_name:loss_func})
 		initial_epoch = wandb.run.step
 	
 	optimizer = Adam(lr=learning_rate)
@@ -112,12 +113,6 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, 
 	f = h5py.File(test_file, mode='r')
 	num_val = f['data'].shape[0]
 
-	if not load:
-		wandb.init(project="ctn-chamfer", name='deepPN-noBN lr1e-3', id='0042')
-	else:
-		wandb.init(project="ctn-chamfer", name='deepPN-noBN lr1e-3', resume='0042')
-
-	print('Section:         ' + str(load))
 	print('Batch Size:      ' + str(batch_size))
 	print('LR:              ' + str(learning_rate))
 	print('Subsets:         ' + str(n_subsets))
