@@ -33,7 +33,7 @@ else:
 	from keras.models import load_model
 	from keras.engine.topology import Layer
 
-def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, epochs):
+def train(load, batch_size, learning_rate, rotate, displace, deform, epochs):
 	train_file = './ModelNet40/ply_data_train.h5'
 	train = h5py.File(train_file, mode='r')
 	test_file = './ModelNet40/ply_data_test.h5'
@@ -58,14 +58,14 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, 
  						  shuffle=True,
  						  rotate=rotate,
  						  displace=displace,
- 						  deform=deform, part=0)
+ 						  deform=deform, dims=4, part=2, part_nn=int(2048 * 0.75))
 
 	val = DataGenerator(test,
 						batch_size,
  						shuffle=False,
  						rotate=rotate,
  						displace=displace,
- 						deform=deform, part=0)
+ 						deform=deform, dims=4, part=2, part_nn=int(2048 * 0.75))
 
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches
@@ -89,12 +89,11 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, 
 	num_points = fixed_len
 
 	if not load:
-		wandb.init(project="ctn-chamfer", name='P small+add lr1e-3', id='0062')
+		wandb.init(project="ctn-chamfer", name='PN 4D part2 0.75nn lr1e-3', id='0085')
 	else:
-		wandb.init(project="ctn-chamfer", name='P small+add lr1e-3', resume='0062')
+		wandb.init(project="ctn-chamfer", name='PN 4D part2 0.75nn lr1e-3', resume='0085')
 
-	model = ConditionalTransformerNet(num_points,
-									  n_subsets=n_subsets,
+	model = ConditionalTransformerNet(num_points, dims=4,
 									  pn_filters=[64, 128, 1024],
 									  ctn_filters=[1024, 512, 256, 128, 64])
 	initial_epoch = 0
@@ -115,7 +114,6 @@ def train(load, batch_size, learning_rate, n_subsets, rotate, displace, deform, 
 
 	print('Batch Size:      ' + str(batch_size))
 	print('LR:              ' + str(learning_rate))
-	print('Subsets:         ' + str(n_subsets))
 	print('Rotation:        ' + str(rotate))
 	print('Displacement:    ' + str(displace))
 	print('Deformation:     ' + str(deform))
@@ -137,7 +135,6 @@ if __name__ == '__main__':
 
 	learning_rate = float(sys.argv[3])
 	batch_size = int(sys.argv[4])
-	n_subsets = int(sys.argv[5])
 	
-	# order, batch_size, learning_rate, n_subsets, rotate, displace, deform, epochs
-	train(0, batch_size, learning_rate, n_subsets,     45,     1.00,   True,   2000)
+	# order, batch_size, learning_rate, rotate, displace, deform, epochs
+	train(0, batch_size, learning_rate,     45,     1.00,   True,   2000)

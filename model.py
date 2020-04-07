@@ -1,5 +1,5 @@
 import tensorflow as tf
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Dropout, Input, BatchNormalization, Dense, RepeatVector, Reshape, Lambda, concatenate, add
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, Input, BatchNormalization, Dense, RepeatVector, Reshape, Lambda, concatenate, add
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.models import Model
 from tensorflow.keras.utils import plot_model
@@ -170,8 +170,8 @@ def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', verbose=
 	moved = Input(shape=(num_points, dims), name='Moved_Model')
 	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
-	#pointNet = PointNet_features(int(num_points / n_subsets), dims, pn_filters)
-	pointNet = Point_features(int(num_points / n_subsets), dims, pn_filters)
+	pointNet = PointNet_features(int(num_points / n_subsets), dims, pn_filters)
+	#pointNet = Point_features(int(num_points / n_subsets), dims, pn_filters)
 
 	if n_subsets > 1:
 		fixed_ss = Lambda(drop_batch_points, name='Fixed_Subsampled')(fixed)

@@ -30,12 +30,23 @@ class Prediction_Plotter(tf.keras.callbacks.Callback):
             y_true = [i[1] for i in self.Y[batch_id]]
             z_true = [i[2] for i in self.Y[batch_id]]
 
+            x_f = [i[0] for i in self.X[0][batch_id]]
+            y_f = [i[1] for i in self.X[0][batch_id]]
+            z_f = [i[2] for i in self.X[0][batch_id]]
+
+            #x_m = [i[0] for i in self.X[1][batch_id]]
+            #y_m = [i[1] for i in self.X[1][batch_id]]
+            #z_m = [i[2] for i in self.X[1][batch_id]]
+            
             x_pred = [i[0] for i in pred[batch_id]]
             y_pred = [i[1] for i in pred[batch_id]]
             z_pred = [i[2] for i in pred[batch_id]]
             
             ax.scatter(x_true, y_true, z_true, c='y', marker='.')
             ax.scatter(x_pred, y_pred, z_pred, c='g', marker='.')
+            
+            ax.scatter(x_f, y_f, z_f, c='r', marker='*', alpha=0.1)
+            #ax.scatter(x_m, y_m, z_m, c='b', marker='*', alpha=0.1)
 
             ax.set_xlim([-1, 1])
             ax.set_ylim([-1, 1])
