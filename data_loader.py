@@ -1,5 +1,6 @@
 import numpy as np
 import scipy
+from scipy.spatial import distance 
 import h5py
 import random
 import tensorflow as tf
@@ -8,7 +9,7 @@ import random
 from itertools import product
 
 class DataGenerator(Sequence):
-	def __init__(self, data, batch_size, dims=3, shuffle=True, rotate=45, displace=1, deform=False, part=0):
+	def __init__(self, data, batch_size, dims=3, shuffle=True, rotate=45, displace=1, deform=False, part=0, part_nn=0):
 		self.data = data
 		self.batch_size = batch_size
 		self.dims = dims
@@ -18,6 +19,7 @@ class DataGenerator(Sequence):
 		self.displace = displace
 		self.deform = deform
 		self.part = part
+		self.part_nn = part_nn
 
 		self.nb_sample = self.data['data'].shape[0]
 		self.indexes = np.arange(self.nb_sample)
@@ -55,24 +57,39 @@ class DataGenerator(Sequence):
 			fixed = 2 * (fixed - np.min(fixed)) / (np.ptp(fixed) + eps) - 1
 			fixed = fixed - np.mean(fixed, axis=0)
 			moving = fixed
-			ground_truth = fixed
+			ground_truth = moving
 
 			# Take part(s) from point set(s).
-			if self.part > 0: # Register a part to whole
-				axis_moving = np.random.randint(0, 3)
-				moving = moving[moving[:, axis_moving].argsort()]
-				moving = moving[int(0.5 * dims[0]):]
-				moving = np.resize(moving, dims)
-				if self.part > 1: # Register a part to a part
-					axis_fixed = np.random.randint(0, 3)
-					while axis_moving == axis_fixed:
+			if not self.part_nn:
+				if self.part > 0: # Register a part to whole
+					axis_moving = np.random.randint(0, 3)
+					moving = moving[moving[:, axis_moving].argsort()]
+					moving = moving[int(0.5 * dims[0]):]
+					moving = np.resize(moving, dims)
+					if self.part > 1: # Register a part to a part
 						axis_fixed = np.random.randint(0, 3)
-					fixed = fixed[fixed[:, axis_fixed].argsort()]
-					fixed = fixed[:int(0.5 * dims[0])]
-					fixed = np.resize(fixed, dims)
-					ground_truth = np.unique(np.vstack((moving, fixed)), axis=0)
-					ground_truth = np.resize(ground_truth, dims)
-				to_reg = ground_truth
+						while axis_moving == axis_fixed:
+							axis_fixed = np.random.randint(0, 3)
+						fixed = fixed[fixed[:, axis_fixed].argsort()]
+						fixed = fixed[:int(0.5 * dims[0])]
+						fixed = np.resize(fixed, dims)
+			if self.part_nn:
+				if self.part > 0: # Register a part to whole
+					index = np.random.randint(0, dims[0])
+					D = distance.cdist([moving[index, :]], moving)
+					closest = np.argsort(D[0])
+					closest = closest[:self.part_nn]
+					moving = moving[closest, :]
+					moving = np.resize(moving, dims)
+					if self.part > 1: # Register a part to a part
+						index = np.random.randint(0, dims[0])
+						D = distance.cdist([moving[index, :]], moving)
+						closest = np.argsort(D[0])
+						closest = closest[:self.part_nn]
+						fixed = fixed[closest, :]
+						fixed = np.resize(fixed, dims)
+			
+			ground_truth = moving # Make the ground truth the unmoved-moving part.
 
 			# Deform.
 			if self.deform:
@@ -83,10 +100,6 @@ class DataGenerator(Sequence):
 				moving = np.matmul(k.T, c) + moving
 				moving_mean = np.mean(moving, axis=0)
 				moving = moving - moving_mean
-				if self.part > 0:
-					k = compute_RBF(x, to_reg, sigma)
-					to_reg = np.matmul(k.T, c) + to_reg
-					to_reg = to_reg - moving_mean
 
 			# Rotate, translate.
 			y, p, r = ypr_rand(-self.rotate, self.rotate)	
@@ -96,12 +109,7 @@ class DataGenerator(Sequence):
 			moving_with_ones = np.ones((dims[0], dims[1] + 1))
 			moving_with_ones[:,:-1] = moving
 			moving = np.dot(T, moving_with_ones.T).T[:, :-1]
-			if not self.part:
-				to_reg = moving
-			else:
-				to_reg_with_ones = np.ones((dims[0], dims[1] + 1))
-				to_reg_with_ones[:,:-1] = to_reg
-				to_reg = np.dot(T, to_reg_with_ones.T).T[:, :-1]
+			to_reg = moving
 			
 			if self.dims == 4:
 				moving_with_ones = np.ones((dims[0], dims[1] + 1))
