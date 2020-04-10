@@ -154,33 +154,17 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 
 	return model
 
-def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', verbose=False, n_subsets=1, pn_filters=[64, 128, 1024], ctn_filters=[1024, 512, 256, 128, 64]):
-
-	def drop_batch_points(batch):
-		import tensorflow as tf
-		return tf.map_fn(lambda x: drop_points(x), batch)
-
-	def drop_points(points):
-		import tensorflow as tf
-		shuffled = tf.random.shuffle(points)
-		subsets = tf.split(shuffled, n_subsets)
-		return subsets[0]
+def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', verbose=False, pn_filters=[64, 128, 1024], ctn_filters=[1024, 512, 256, 128, 64]):
 
 	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
 	moved = Input(shape=(num_points, dims), name='Moved_Model')
 	moving = Input(shape=(num_points, dims), name='Moving_Model')
 
-	pointNet = PointNet_features(int(num_points / n_subsets), dims, pn_filters)
-	#pointNet = Point_features(int(num_points / n_subsets), dims, pn_filters)
+	pointNet = PointNet_features(int(num_points), dims, pn_filters)
+	#pointNet = Point_features(int(num_points), dims, pn_filters)
 
-	if n_subsets > 1:
-		fixed_ss = Lambda(drop_batch_points, name='Fixed_Subsampled')(fixed)
-		fixed_pointNet = pointNet(fixed_ss)
-		moved_ss = Lambda(drop_batch_points, name='Moved_Subsampled')(moved)
-		moving_pointNet = pointNet(moved_ss)
-	else:
-		fixed_pointNet = pointNet(fixed)
-		moving_pointNet = pointNet(moved)
+	fixed_pointNet = pointNet(fixed)
+	moving_pointNet = pointNet(moved)
 
 	point_features = concatenate([fixed_pointNet, moving_pointNet])
 	point_features_matrix = RepeatVector(num_points)(point_features)

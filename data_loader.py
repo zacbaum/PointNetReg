@@ -9,7 +9,7 @@ import random
 from itertools import product
 
 class DataGenerator(Sequence):
-	def __init__(self, data, batch_size, dims=3, shuffle=True, rotate=45, displace=1, deform=False, part=0, part_nn=0):
+	def __init__(self, data, batch_size, dims=3, shuffle=True, rotate=45, displace=1, deform=False, part=0, part_nn=0, noise=0):
 		self.data = data
 		self.batch_size = batch_size
 		self.dims = dims
@@ -20,6 +20,7 @@ class DataGenerator(Sequence):
 		self.deform = deform
 		self.part = part
 		self.part_nn = part_nn
+		self.noise = noise
 
 		self.nb_sample = self.data['data'].shape[0]
 		self.indexes = np.arange(self.nb_sample)
@@ -65,14 +66,12 @@ class DataGenerator(Sequence):
 					axis_moving = np.random.randint(0, 3)
 					moving = moving[moving[:, axis_moving].argsort()]
 					moving = moving[int(0.5 * dims[0]):]
-					moving = np.resize(moving, dims)
 					if self.part > 1: # Register a part to a part
 						axis_fixed = np.random.randint(0, 3)
 						while axis_moving == axis_fixed:
 							axis_fixed = np.random.randint(0, 3)
 						fixed = fixed[fixed[:, axis_fixed].argsort()]
 						fixed = fixed[:int(0.5 * dims[0])]
-						fixed = np.resize(fixed, dims)
 			if self.part_nn:
 				if self.part > 0: # Register a part to whole
 					index = np.random.randint(0, dims[0])
@@ -80,14 +79,12 @@ class DataGenerator(Sequence):
 					closest = np.argsort(D[0])
 					closest = closest[:self.part_nn]
 					moving = moving[closest, :]
-					moving = np.resize(moving, dims)
 					if self.part > 1: # Register a part to a part
 						index = np.random.randint(0, dims[0])
-						D = distance.cdist([moving[index, :]], moving)
+						D = distance.cdist([fixed[index, :]], fixed)
 						closest = np.argsort(D[0])
 						closest = closest[:self.part_nn]
 						fixed = fixed[closest, :]
-						fixed = np.resize(fixed, dims)
 			
 			ground_truth = moving # Make the ground truth the unmoved-moving part.
 
@@ -109,6 +106,17 @@ class DataGenerator(Sequence):
 			moving_with_ones = np.ones((dims[0], dims[1] + 1))
 			moving_with_ones[:,:-1] = moving
 			moving = np.dot(T, moving_with_ones.T).T[:, :-1]
+
+			# Add some gaussian noise.
+			if self.noise > 0:
+				moving = moving + np.random.normal(0, self.noise, moving.shape)
+
+			# Resize after adding noise to prevent duplicate point-pairs from having different noise added.
+			if self.part:
+				moving = np.resize(moving, dims)
+				fixed = np.resize(fixed, dims)
+			
+			# Create the point cloud we actually register.
 			to_reg = moving
 			
 			if self.dims == 4:
