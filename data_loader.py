@@ -61,6 +61,7 @@ class DataGenerator(Sequence):
 			ground_truth = moving
 
 			# Take part(s) from point set(s).
+			# Along axis...
 			if not self.part_nn:
 				if self.part > 0: # Register a part to whole
 					axis_moving = np.random.randint(0, 3)
@@ -72,6 +73,7 @@ class DataGenerator(Sequence):
 							axis_fixed = np.random.randint(0, 3)
 						fixed = fixed[fixed[:, axis_fixed].argsort()]
 						fixed = fixed[:int(0.5 * dims[0])]
+			# From random point nearest neighbours...
 			if self.part_nn:
 				if self.part > 0: # Register a part to whole
 					index = np.random.randint(0, dims[0])
@@ -87,6 +89,16 @@ class DataGenerator(Sequence):
 						fixed = fixed[closest, :]
 			
 			ground_truth = moving # Make the ground truth the unmoved-moving part.
+
+			# Add some gaussian noise.
+			if self.noise > 0:
+				moving = moving + np.random.normal(0, self.noise, moving.shape)
+
+			# Resize after adding noise to prevent duplicate point-pairs from having different noise added.
+			if self.part:
+				moving = np.resize(moving, dims)
+				fixed = np.resize(fixed, dims)
+				ground_truth = np.resize(ground_truth, dims)
 
 			# Deform.
 			if self.deform:
@@ -106,15 +118,6 @@ class DataGenerator(Sequence):
 			moving_with_ones = np.ones((dims[0], dims[1] + 1))
 			moving_with_ones[:,:-1] = moving
 			moving = np.dot(T, moving_with_ones.T).T[:, :-1]
-
-			# Add some gaussian noise.
-			if self.noise > 0:
-				moving = moving + np.random.normal(0, self.noise, moving.shape)
-
-			# Resize after adding noise to prevent duplicate point-pairs from having different noise added.
-			if self.part:
-				moving = np.resize(moving, dims)
-				fixed = np.resize(fixed, dims)
 			
 			# Create the point cloud we actually register.
 			to_reg = moving
