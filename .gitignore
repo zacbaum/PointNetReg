@@ -134,3 +134,4 @@ dmypy.json
 *.filepart
 testK.py
 gan.py
+*.gif

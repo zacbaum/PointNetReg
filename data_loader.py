@@ -9,7 +9,7 @@ import random
 from itertools import product
 
 class DataGenerator(Sequence):
-	def __init__(self, data, batch_size, dims=3, shuffle=True, rotate=45, displace=1, deform=False, part=0, part_nn=0, noise=0):
+	def __init__(self, data, batch_size, dims=3, shuffle=True, rotate=45, displace=1, deform=0, part=0, part_nn=0, noise=0):
 		self.data = data
 		self.batch_size = batch_size
 		self.dims = dims
@@ -61,32 +61,36 @@ class DataGenerator(Sequence):
 			ground_truth = moving
 
 			# Take part(s) from point set(s).
-			# Along axis...
-			if not self.part_nn:
-				if self.part > 0: # Register a part to whole
-					axis_moving = np.random.randint(0, 3)
-					moving = moving[moving[:, axis_moving].argsort()]
-					moving = moving[int(0.5 * dims[0]):]
-					if self.part > 1: # Register a part to a part
-						axis_fixed = np.random.randint(0, 3)
-						while axis_moving == axis_fixed:
-							axis_fixed = np.random.randint(0, 3)
-						fixed = fixed[fixed[:, axis_fixed].argsort()]
-						fixed = fixed[:int(0.5 * dims[0])]
-			# From random point nearest neighbours...
-			if self.part_nn:
-				if self.part > 0: # Register a part to whole
+			test = False
+			if self.part > 0: # Register a part to whole
+				index = np.random.randint(0, dims[0])
+				part = np.random.randint(1024, 2048)
+				if self.part_nn:
+					part = int(np.random.normal(self.part_nn, (2048 - self.part_nn) / 2))
+					part = max(min(part, 2048), 1024)
+				if test:
+					part = self.part_nn
+				D = distance.cdist([moving[index, :]], moving)
+				closest = np.argsort(D[0])
+				closest = closest[:part]
+				moving = moving[closest, :]
+				if self.part > 1: # Register a part to a part
 					index = np.random.randint(0, dims[0])
-					D = distance.cdist([moving[index, :]], moving)
+					part = np.random.randint(1024, 2048)
+					if self.part_nn:
+						part = int(np.random.normal(self.part_nn, (2048 - self.part_nn) / 2))
+						part = max(min(part, 2048), 1024)
+					if test:
+						part = self.part_nn
+					D = distance.cdist([fixed[index, :]], fixed)
 					closest = np.argsort(D[0])
-					closest = closest[:self.part_nn]
-					moving = moving[closest, :]
-					if self.part > 1: # Register a part to a part
-						index = np.random.randint(0, dims[0])
-						D = distance.cdist([fixed[index, :]], fixed)
-						closest = np.argsort(D[0])
-						closest = closest[:self.part_nn]
-						fixed = fixed[closest, :]
+					closest = closest[:part]
+					fixed = fixed[closest, :]
+			flip = False
+			if flip:
+				temp = moving
+				moving = fixed
+				fixed = temp
 			
 			ground_truth = moving # Make the ground truth the unmoved-moving part.
 
@@ -103,7 +107,7 @@ class DataGenerator(Sequence):
 			# Deform.
 			if self.deform:
 				sigma = np.random.normal()
-				c = np.random.normal(loc=0, scale=0.1, size=(10, 3))
+				c = np.random.normal(loc=0, scale=self.deform, size=(10, 3))
 				x = np.random.uniform(low=-1, high=1, size=(10, 3))
 				k = compute_RBF(x, moving, sigma)
 				moving = np.matmul(k.T, c) + moving
