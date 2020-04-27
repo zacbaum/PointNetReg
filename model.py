@@ -95,6 +95,33 @@ def Point_features(input_len, dimensions=3, filters=[64, 128, 1024]):
 
 	return model
 
+def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', pn_filters=[64, 128, 1024], ctn_filters=[1024, 512, 256, 128, 64]):
+
+	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
+	moved = Input(shape=(num_points, dims), name='Moved_Model')
+	moving = Input(shape=(num_points, dims), name='Moving_Model')
+
+	pointNet = PointNet_features(int(num_points), dims, pn_filters)
+
+	fixed_pointNet = pointNet(fixed)
+	moving_pointNet = pointNet(moved)
+
+	point_features = concatenate([fixed_pointNet, moving_pointNet])
+	point_features_matrix = RepeatVector(num_points)(point_features)
+
+	out = moving
+	x = concatenate([point_features_matrix, out])
+	for num_filters in ctn_filters:
+		x = Conv1D(num_filters, 1, activation=ct_activation)(x)
+	x = Conv1D(dims, 1)(x)
+	out = add([x, out])
+
+	model = Model(inputs=[fixed, moved, moving], outputs=out, name='FPT')
+
+	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
+
+	return model
+
 def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
 
 	def tps(inputs):
@@ -151,33 +178,5 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 
 	if verbose: model.summary()
 	plot_model(model, to_file='model.png', show_shapes=True)#, expand_nested=True)
-
-	return model
-
-def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', verbose=False, pn_filters=[64, 128, 1024], ctn_filters=[1024, 512, 256, 128, 64]):
-
-	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
-	moved = Input(shape=(num_points, dims), name='Moved_Model')
-	moving = Input(shape=(num_points, dims), name='Moving_Model')
-
-	pointNet = PointNet_features(int(num_points), dims, pn_filters)
-	#pointNet = Point_features(int(num_points), dims, pn_filters)
-
-	fixed_pointNet = pointNet(fixed)
-	moving_pointNet = pointNet(moved)
-
-	point_features = concatenate([fixed_pointNet, moving_pointNet])
-	point_features_matrix = RepeatVector(num_points)(point_features)
-	x = concatenate([point_features_matrix, moving])
-
-	for num_filters in ctn_filters:
-		x = Conv1D(num_filters, 1, activation=ct_activation)(x)
-	x = Conv1D(dims, 1)(x)
-	x = add([x, moving])
-
-	model = Model(inputs=[fixed, moved, moving], outputs=x, name='CTN')
-
-	if verbose: model.summary()
-	plot_model(model, to_file='model.png', show_shapes=True, expand_nested=True)
 
 	return model
