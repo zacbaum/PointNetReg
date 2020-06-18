@@ -14,8 +14,8 @@ from datetime import datetime
 from keras import backend as K
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
-from losses import chamfer_loss, gmm_nll_loss
-from model import ConditionalTransformerNet, TPSTransformNet, MatMul
+from losses import chamfer_loss, chamfer_loss_batch, gmm_nll_loss
+from model import FreePointTransformer, MatMul
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
 matplotlib.use('AGG')
@@ -33,7 +33,7 @@ else:
 	from keras.models import load_model
 	from keras.engine.topology import Layer
 
-def train(load, batch_size, learning_rate, rotate, displace, deform, epochs):
+def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, epochs):
 	train_file = './ModelNet40/ply_data_train.h5'
 	train = h5py.File(train_file, mode='r')
 	test_file = './ModelNet40/ply_data_test.h5'
@@ -49,6 +49,9 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, epochs):
 	if loss_name == 'chamfer_loss':
 		loss_func = chamfer_loss
 
+	if loss_name == 'chamfer_loss_batch':
+		loss_func = chamfer_loss_batch
+
 	if loss_name == 'gmm_nll_loss':
 		loss_func = gmm_nll_loss(0.01, 0.1)
 		metrics = [chamfer_loss]
@@ -58,14 +61,14 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, epochs):
  						  shuffle=True,
  						  rotate=rotate,
  						  displace=displace,
- 						  deform=deform, dims=4, part=2, part_nn=int(2048 * 0.75))
+ 						  deform=deform, dims=4, part=1, part_nn=int(2048 * part_nn))
 
 	val = DataGenerator(test,
 						batch_size,
  						shuffle=False,
  						rotate=rotate,
  						displace=displace,
- 						deform=deform, dims=4, part=2, part_nn=int(2048 * 0.75))
+ 						deform=deform, dims=4, part=1, part_nn=int(2048 * part_nn))
 
 	val_data = []     # store all the generated data batches
 	val_labels = []   # store all the generated ground_truth batches
@@ -89,13 +92,13 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, epochs):
 	num_points = fixed_len
 
 	if not load:
-		wandb.init(project="ctn-chamfer", name='PN 4D part2 0.75nn lr1e-3', id='0085')
+		wandb.init(project="ctn-chamfer", name='PN 4D', id='0207')
 	else:
-		wandb.init(project="ctn-chamfer", name='PN 4D part2 0.75nn lr1e-3', resume='0085')
+		wandb.init(project="ctn-chamfer", name='PN 4D', resume='0207')
 
-	model = ConditionalTransformerNet(num_points, dims=4,
-									  pn_filters=[64, 128, 1024],
-									  ctn_filters=[1024, 512, 256, 128, 64])
+	model = FreePointTransformer(num_points, dims=4,
+								 pn_filters=[64, 128, 1024],
+								 ctn_filters=[1024, 512, 256, 128, 64])
 	initial_epoch = 0
 	if load:
 		model = load_model(wandb.restore('model-best.h5').name,
@@ -117,6 +120,7 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, epochs):
 	print('Rotation:        ' + str(rotate))
 	print('Displacement:    ' + str(displace))
 	print('Deformation:     ' + str(deform))
+	print('Occlusion:       ' + str(100 * (1 - part_nn)) + '%')
 	print('Epochs to Train: ' + str(epochs) + '\n')
 
 	history = model.fit_generator(train,
@@ -126,6 +130,7 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, epochs):
 								  validation_data=val,
 								  validation_steps=num_val // batch_size,
 								  callbacks=[Prediction_Plot_Val,
+								  			 ModelCheckpoint(os.path.join(wandb.run.dir, "model-checkpoint.h5")),
 											 WandbCallback(log_weights=True)],
 								  verbose=1)
 
@@ -136,5 +141,5 @@ if __name__ == '__main__':
 	learning_rate = float(sys.argv[3])
 	batch_size = int(sys.argv[4])
 	
-	# order, batch_size, learning_rate, rotate, displace, deform, epochs
-	train(0, batch_size, learning_rate,     45,     1.00,   True,   2000)
+	# order, batch_size, learning_rate, rotate, displace, deform, part_nn, epochs
+	train(0, batch_size, learning_rate,     45,     1.00,    0.1,     1.0,    5000)

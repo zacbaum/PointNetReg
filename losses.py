@@ -23,6 +23,25 @@ def chamfer_loss(y_true, y_pred):
 	batched_losses = tf.map_fn(lambda x: chamfer_distance(x[0], x[1]), (y_true, y_pred), dtype=tf.float32)
 	return K.mean(tf.stack(batched_losses))
 
+def chamfer_loss_batch(y_true, y_pred):
+	if K.int_shape(y_pred)[2] == 4:
+		y_pred = y_pred[:, :, :-1]
+		y_true = y_true[:, :, :-1]
+	
+	row_norms_true = tf.reduce_sum(tf.square(y_true), axis=2)
+	row_norms_true = tf.reshape(row_norms_true, [tf.shape(y_pred)[0], -1, 1])
+	
+	row_norms_pred = tf.reduce_sum(tf.square(y_pred), axis=2)
+	row_norms_pred = tf.reshape(row_norms_pred, [tf.shape(y_pred)[0], 1, -1])
+	
+	D = row_norms_true - 2 * tf.matmul(y_true, y_pred, False, True) + row_norms_pred
+	
+	dist_t_to_p = K.mean(K.min(D, axis=1))
+	dist_p_to_t = K.mean(K.min(D, axis=2))
+	dist = K.mean(tf.stack([dist_p_to_t, dist_t_to_p]))
+
+	return dist
+
 def gmm_nll_loss(covariance_matrix_diag, mix_param_val):
 
 	def gmm_nll_batched(y_true, y_pred):

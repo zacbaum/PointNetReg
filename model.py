@@ -95,7 +95,36 @@ def Point_features(input_len, dimensions=3, filters=[64, 128, 1024]):
 
 	return model
 
-def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', pn_filters=[64, 128, 1024], ctn_filters=[1024, 512, 256, 128, 64]):
+def PointTransformerBlock(input_tensor, ct_activation, ctn_filters):
+
+	x = input_tensor
+	
+	for num_filters in ctn_filters:
+		x = Conv1D(num_filters, 1, activation=ct_activation)(x)
+	
+	x_short = Conv1D(num_filters, 1, activation=ct_activation)(input_tensor)
+	
+	x = add([x, x_short])
+
+	return x
+
+def ConvTransformerBlock(input_tensor, ct_activation, filters):
+
+	x = input_tensor
+	
+	x = Conv1D(filters, 1, activation=ct_activation)(x)
+	'''
+	x = Conv1D(filters, 1, activation=ct_activation)(x)
+	x = Conv1D(filters, 1, activation=ct_activation)(x)
+	x = Conv1D(filters, 1, activation=ct_activation)(x)
+	x = Conv1D(filters, 1, activation=ct_activation)(x)
+		
+	x_short = Conv1D(filters, 1, activation=ct_activation)(input_tensor)
+	x = add([x, x_short])
+	'''
+	return x
+
+def FreePointTransformer(num_points, dims=3, ct_activation='relu', pn_filters=[64, 128, 1024], ctn_filters=[1024, 512, 256, 128, 64]):
 
 	fixed = Input(shape=(num_points, dims), name='Fixed_Model')
 	moved = Input(shape=(num_points, dims), name='Moved_Model')
@@ -111,8 +140,10 @@ def ConditionalTransformerNet(num_points, dims=3, ct_activation='relu', pn_filte
 
 	out = moving
 	x = concatenate([point_features_matrix, out])
+
 	for num_filters in ctn_filters:
-		x = Conv1D(num_filters, 1, activation=ct_activation)(x)
+		x = ConvTransformerBlock(x, ct_activation, num_filters)
+
 	x = Conv1D(dims, 1)(x)
 	out = add([x, out])
 
