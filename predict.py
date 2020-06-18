@@ -7,10 +7,12 @@ import matplotlib
 import matplotlib.pyplot as plt
 matplotlib.use('AGG')
 import os
-os.environ["CUDA_VISIBLE_DEVICES"]='0'
+os.environ["CUDA_VISIBLE_DEVICES"]='CPU'
 from model import MatMul, ConditionalTransformerNet
 import h5py
 from data_loader import DataGenerator
+from cpd import deformable_registration, gaussian_kernel
+import time
 
 try:
 	v = int(tf.VERSION[0])
@@ -66,7 +68,7 @@ def predict_mn40(fname, outname, rotate=0, displace=0, deform=0, part=0, part_nn
 	test = h5py.File(test_file, mode='r')
 	num_val = test['data'].shape[0]
 
-	batch_size = 32
+	batch_size = 1
 
 	val = DataGenerator(test,
 						batch_size,
@@ -93,39 +95,81 @@ def predict_mn40(fname, outname, rotate=0, displace=0, deform=0, part=0, part_nn
 					   custom_objects={'MatMul':MatMul}, 
 					   compile=False)
 
-	current_batch = 0
+	for batch_no in range(len(val_data)):
 
-	for i in range(len(val_data)):
+		pred = model.predict_on_batch(val_data[batch_no])
 
-		pred = model.predict_on_batch(val_data[i])
+		'''
+		a_points = val_labels[batch_no][0]
+		b_points = pred[0]
+		if a_points.shape[1] == 4:
+			a_points = a_points[:, :-1]
+		if b_points.shape[1] == 4:
+			b_points = b_points[:, :-1]
+		R, t = kabsch(a_points, b_points)
+		deg_R = round(np.degrees(np.arccos((np.trace(R) - 1) / 2)), 5)
+		mag_t = round(np.linalg.norm(t), 5)
+		print(deg_R, mag_t)
 
-		for batch_id in range(current_batch * batch_size, current_batch * batch_size + pred.shape[0]):
+		T = np.empty((4, 4))
+		T[:3, :3] = R
+		T[:3, 3] = t
+		T[3, :] = [0, 0, 0, 1]
+		pred[0] = np.dot(T, pred[0].T).T
+		a_points = val_labels[batch_no][0]
+		b_points = pred[0]
+		if a_points.shape[1] == 4:
+			a_points = a_points[:, :-1]
+		if b_points.shape[1] == 4:
+			b_points = b_points[:, :-1]
+		R, t = kabsch(a_points, b_points)
+		deg_R = round(np.degrees(np.arccos((np.trace(R) - 1) / 2)), 5)
+		mag_t = round(np.linalg.norm(t), 5)
+		print(deg_R, mag_t)
 
-			x_true = [i[0] for i in val_labels[current_batch][batch_id - current_batch * batch_size]]
-			y_true = [i[1] for i in val_labels[current_batch][batch_id - current_batch * batch_size]]
-			z_true = [i[2] for i in val_labels[current_batch][batch_id - current_batch * batch_size]]
+		print()
+		'''
 
-			x_f = [i[0] for i in val_data[current_batch][0][batch_id - current_batch * batch_size]]
-			y_f = [i[1] for i in val_data[current_batch][0][batch_id - current_batch * batch_size]]
-			z_f = [i[2] for i in val_data[current_batch][0][batch_id - current_batch * batch_size]]
+		for batch_id in range(batch_no * batch_size, batch_no * batch_size + pred.shape[0]):
 
-			x_m = [i[0] for i in val_data[current_batch][1][batch_id - current_batch * batch_size]]
-			y_m = [i[1] for i in val_data[current_batch][1][batch_id - current_batch * batch_size]]
-			z_m = [i[2] for i in val_data[current_batch][1][batch_id - current_batch * batch_size]]
+			fixed = val_data[batch_no][0][batch_id - batch_no * batch_size]
+			moving = val_data[batch_no][1][batch_id - batch_no * batch_size]
+			reg = deformable_registration(**{'X':fixed, 'Y':moving, 'max_iterations':100})
+			t = time.time()
+			pred, params = reg.register()
+			print(time.time() - t)
 
-			x_pred = [i[0] for i in pred[batch_id - current_batch * batch_size]]
-			y_pred = [i[1] for i in pred[batch_id - current_batch * batch_size]]
-			z_pred = [i[2] for i in pred[batch_id - current_batch * batch_size]]
+			x_true = [i[0] for i in val_labels[batch_no][batch_id - batch_no * batch_size]]
+			y_true = [i[1] for i in val_labels[batch_no][batch_id - batch_no * batch_size]]
+			z_true = [i[2] for i in val_labels[batch_no][batch_id - batch_no * batch_size]]
+
+			x_f = [i[0] for i in val_data[batch_no][0][batch_id - batch_no * batch_size]]
+			y_f = [i[1] for i in val_data[batch_no][0][batch_id - batch_no * batch_size]]
+			z_f = [i[2] for i in val_data[batch_no][0][batch_id - batch_no * batch_size]]
+
+			x_m = [i[0] for i in val_data[batch_no][1][batch_id - batch_no * batch_size]]
+			y_m = [i[1] for i in val_data[batch_no][1][batch_id - batch_no * batch_size]]
+			z_m = [i[2] for i in val_data[batch_no][1][batch_id - batch_no * batch_size]]
+
+			x_pred = [i[0] for i in pred]
+			y_pred = [i[1] for i in pred]
+			z_pred = [i[2] for i in pred]
+
+			#x_pred = [i[0] for i in pred[batch_id - batch_no * batch_size]]
+			#y_pred = [i[1] for i in pred[batch_id - batch_no * batch_size]]
+			#z_pred = [i[2] for i in pred[batch_id - batch_no * batch_size]]
 			
+			'''
 			plt.clf()
 			fig = plt.figure()
 			ax = fig.add_subplot(111, projection='3d')
 
-			ax.scatter(x_pred, y_pred, z_pred, c='g', marker='.')
 			if not part:
-				ax.scatter(x_true, y_true, z_true, c='y', marker='.')
+				ax.scatter(x_true, y_true, z_true, c='0.5', marker='.', alpha=0.5)
 			else:
-				ax.scatter(x_f, y_f, z_f, c='y', marker='.')
+				ax.scatter(x_f, y_f, z_f, c='0.5', marker='.', alpha=0.5)
+			ax.scatter(x_m, y_m, z_m, c='b', marker='.', alpha=0.25)
+			ax.scatter(x_pred, y_pred, z_pred, c='y', marker='.', alpha=0.5)
 
 			ax.set_xlim([-1, 1])
 			ax.set_ylim([-1, 1])
@@ -134,7 +178,7 @@ def predict_mn40(fname, outname, rotate=0, displace=0, deform=0, part=0, part_nn
 			ax.set_axis_off()
 
 			plt.show()
-			plt.savefig('./' + outname + '/' + str(batch_id + 1).zfill(4) + '_reg.png', dpi=100)
+			plt.savefig('./' + outname + '/' + str(batch_id + 1).zfill(4) + '_reg.png', dpi=100, transparent=True)
 			plt.close()
 
 			plt.clf()
@@ -156,9 +200,11 @@ def predict_mn40(fname, outname, rotate=0, displace=0, deform=0, part=0, part_nn
 			plt.show()
 			plt.savefig('./' + outname + '/' + str(batch_id + 1).zfill(4) + '_pre-reg.png', dpi=100)
 			plt.close()
+			'''
 			
-			a_points = val_labels[current_batch][batch_id - current_batch * batch_size]
-			b_points = pred[batch_id - current_batch * batch_size]
+			a_points = val_labels[batch_no][batch_id - batch_no * batch_size]
+			b_points = pred
+			#b_points = pred[batch_id - batch_no * batch_size]
 			if a_points.shape[1] == 4:
 				a_points = a_points[:, :-1]
 			if b_points.shape[1] == 4:
@@ -180,11 +226,28 @@ def predict_mn40(fname, outname, rotate=0, displace=0, deform=0, part=0, part_nn
 			f.write(result_string)
 			f.close()
 
-		current_batch += 1
+predict_mn40('PN 4D', 'CPD-nodefm', rotate=45, displace=0.5)
+predict_mn40('PN 4D', 'CPD', rotate=45, displace=0.5, deform=0.1)
+
+'''
+predict_mn40('PN 4D', 'PN-4D-nodefm', rotate=45, displace=0.5)
+predict_mn40('PN 4D', 'PN-4D', rotate=45, displace=0.5, deform=0.1)
+
+predict_mn40('PN 4D', 'PN-4D-gn001', rotate=45, displace=0.5, deform=0.1, noise=0.01)
+predict_mn40('PN 4D', 'PN-4D-gn002', rotate=45, displace=0.5, deform=0.1, noise=0.02)
+predict_mn40('PN 4D', 'PN-4D-gn004', rotate=45, displace=0.5, deform=0.1, noise=0.04)
+
+predict_mn40('PN 4D', 'PN-4D-df01', rotate=45, displace=0.5, deform=0.1)
+predict_mn40('PN 4D', 'PN-4D-df02', rotate=45, displace=0.5, deform=0.2)
+predict_mn40('PN 4D', 'PN-4D-df04', rotate=45, displace=0.5, deform=0.4)
+
+predict_mn40('PN 4D P1', 'PN-4D-P1-75d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.75)
+predict_mn40('PN 4D P1', 'PN-4D-P2-75d', rotate=45, displace=0.5, deform=0.1, part=2, part_nn=0.75)
+'''
+
 '''
 # Rotation
 ## PN 4D
-predict_mn40('PN 4D', 'PN-4D-00', rotate=00, displace=0.5)
 predict_mn40('PN 4D', 'PN-4D-10', rotate=10, displace=0.5)
 predict_mn40('PN 4D', 'PN-4D-20', rotate=20, displace=0.5)
 predict_mn40('PN 4D', 'PN-4D-30', rotate=30, displace=0.5)
@@ -205,8 +268,7 @@ predict_mn40('PN 4D', 'PN-4D-60d', rotate=60, displace=0.5, deform=0.1)
 predict_mn40('PN 4D', 'PN-4D-70d', rotate=70, displace=0.5, deform=0.1)
 predict_mn40('PN 4D', 'PN-4D-80d', rotate=80, displace=0.5, deform=0.1)
 predict_mn40('PN 4D', 'PN-4D-90d', rotate=90, displace=0.5, deform=0.1)
-'''
-'''
+
 # Deformation
 ## PN 4D
 predict_mn40('PN 4D', 'PN-4D-0.00d-only', deform=0.00)
@@ -220,8 +282,7 @@ predict_mn40('PN 4D', 'PN-4D-0.05d', rotate=45, displace=0.5, deform=0.05)
 predict_mn40('PN 4D', 'PN-4D-0.10d', rotate=45, displace=0.5, deform=0.10)
 predict_mn40('PN 4D', 'PN-4D-0.20d', rotate=45, displace=0.5, deform=0.20)
 predict_mn40('PN 4D', 'PN-4D-0.40d', rotate=45, displace=0.5, deform=0.40)
-'''
-'''
+
 # Gaussian Noise
 ## PN 4D
 predict_mn40('PN 4D', 'PN-4D-gn0.000', rotate=45, displace=0.5, noise=0)
@@ -236,21 +297,10 @@ predict_mn40('PN 4D', 'PN-4D-gn0.010d', rotate=45, displace=0.5, deform=0.1, noi
 predict_mn40('PN 4D', 'PN-4D-gn0.020d', rotate=45, displace=0.5, deform=0.1, noise=0.02)
 predict_mn40('PN 4D', 'PN-4D-gn0.040d', rotate=45, displace=0.5, deform=0.1, noise=0.04)
 
-## PN 4D AvgPool
-predict_mn40('PN 4D AP', 'PN-4D-gn0.000', rotate=45, displace=0.5, noise=0)
-predict_mn40('PN 4D AP', 'PN-4D-gn0.005', rotate=45, displace=0.5, noise=0.005)
-predict_mn40('PN 4D AP', 'PN-4D-gn0.010', rotate=45, displace=0.5, noise=0.01)
-predict_mn40('PN 4D AP', 'PN-4D-gn0.020', rotate=45, displace=0.5, noise=0.02)
-predict_mn40('PN 4D AP', 'PN-4D-gn0.040', rotate=45, displace=0.5, noise=0.04)
-
-predict_mn40('PN 4D AP', 'PN-4D-gn0.000d', rotate=45, displace=0.5, deform=0.1, noise=0)
-predict_mn40('PN 4D AP','PN-4D-gn0.005d', rotate=45, displace=0.5, deform=0.1, noise=0.005)
-predict_mn40('PN 4D AP', 'PN-4D-gn0.010d', rotate=45, displace=0.5, deform=0.1, noise=0.01)
-predict_mn40('PN 4D AP', 'PN-4D-gn0.020d', rotate=45, displace=0.5, deform=0.1, noise=0.02)
-predict_mn40('PN 4D AP', 'PN-4D-gn0.040d', rotate=45, displace=0.5, deform=0.1, noise=0.04)
 '''
 # Partial
 ## PN 4D P1
+'''
 predict_mn40('PN 4D P1', 'PN-4D-P1-95', rotate=45, displace=0.5, part=1, part_nn=0.95)
 predict_mn40('PN 4D P1', 'PN-4D-P1-90', rotate=45, displace=0.5, part=1, part_nn=0.90)
 predict_mn40('PN 4D P1', 'PN-4D-P1-85', rotate=45, displace=0.5, part=1, part_nn=0.85)
@@ -272,3 +322,4 @@ predict_mn40('PN 4D P1', 'PN-4D-P1-65d', rotate=45, displace=0.5, deform=0.1, pa
 predict_mn40('PN 4D P1', 'PN-4D-P1-60d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.60)
 predict_mn40('PN 4D P1', 'PN-4D-P1-55d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.55)
 predict_mn40('PN 4D P1', 'PN-4D-P1-50d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.50)
+'''
