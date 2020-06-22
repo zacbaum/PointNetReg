@@ -95,33 +95,19 @@ def Point_features(input_len, dimensions=3, filters=[64, 128, 1024]):
 
 	return model
 
-def PointTransformerBlock(input_tensor, ct_activation, ctn_filters):
-
-	x = input_tensor
-	
-	for num_filters in ctn_filters:
-		x = Conv1D(num_filters, 1, activation=ct_activation)(x)
-	
-	x_short = Conv1D(num_filters, 1, activation=ct_activation)(input_tensor)
-	
-	x = add([x, x_short])
-
-	return x
-
 def ConvTransformerBlock(input_tensor, ct_activation, filters):
 
 	x = input_tensor
 	
 	x = Conv1D(filters, 1, activation=ct_activation)(x)
-	'''
 	x = Conv1D(filters, 1, activation=ct_activation)(x)
 	x = Conv1D(filters, 1, activation=ct_activation)(x)
 	x = Conv1D(filters, 1, activation=ct_activation)(x)
 	x = Conv1D(filters, 1, activation=ct_activation)(x)
 		
 	x_short = Conv1D(filters, 1, activation=ct_activation)(input_tensor)
+
 	x = add([x, x_short])
-	'''
 	return x
 
 def FreePointTransformer(num_points, dims=3, ct_activation='relu', pn_filters=[64, 128, 1024], ctn_filters=[1024, 512, 256, 128, 64]):
@@ -153,7 +139,7 @@ def FreePointTransformer(num_points, dims=3, ct_activation='relu', pn_filters=[6
 
 	return model
 
-def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activation='relu', dropout=0., batch_norm=False, verbose=False):
+def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activation='relu', verbose=False):
 
 	def tps(inputs):
 		import tensorflow as tf
@@ -195,10 +181,6 @@ def TPSTransformNet(num_points, dims=3, tps_features=27, sigma=1.0, ct_activatio
 	nodes = [1024, 1024, 512, 512]
 	for num_nodes in nodes:
 		point_features = Dense(num_nodes, activation=ct_activation)(point_features)
-		if dropout:
-			point_features = Dropout(dropout)(point_features)
-		if batch_norm:
-			point_features = BatchNormalization()(point_features)
 
 	point_features = Dense(tps_features * dims * 2)(point_features)
 
