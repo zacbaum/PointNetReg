@@ -18,6 +18,7 @@ class DataGenerator(Sequence):
         part_nn=0,
         noise=0,
         shuffle_points=False,
+        kept_points=2048,
     ):
         self.data = data
         self.batch_size = batch_size
@@ -31,6 +32,7 @@ class DataGenerator(Sequence):
         self.part_nn = part_nn
         self.noise = noise
         self.shuffle_points=shuffle_points
+        self.kept_points=kept_points
 
         self.nb_sample = self.data["data"].shape[0]
         self.indexes = np.arange(self.nb_sample)
@@ -45,7 +47,7 @@ class DataGenerator(Sequence):
         data_temp = [self.data["data"][k] for k in indexes]
 
         # Generate augmented batch data
-        X, y = self.__generator_PART(data_temp)
+        X, y = self.__generator(data_temp)
 
         return X, y
 
@@ -153,15 +155,22 @@ class DataGenerator(Sequence):
                 ground_truth = gt_with_ones
 
             if self.shuffle_points:
-                X1.append(fixed[np.random.permutation(fixed.shape[0]), :])
-                X2.append(moving[np.random.permutation(moving.shape[0]), :])
-                X3.append(to_reg[np.random.permutation(to_reg.shape[0]), :])
-                Y.append(ground_truth[np.random.permutation(ground_truth.shape[0]), :])
-            else:
-                X1.append(fixed)
-                X2.append(moving)
-                X3.append(to_reg)
-                Y.append(ground_truth)
+                fixed = fixed[np.random.permutation(fixed.shape[0]), :]
+                moving = moving[np.random.permutation(moving.shape[0]), :]
+                to_reg = to_reg[np.random.permutation(to_reg.shape[0]), :]
+                ground_truth = ground_truth[np.random.permutation(ground_truth.shape[0]), :]
+
+            if self.kept_points:
+                fixed = fixed[np.random.choice(fixed.shape[0], self.kept_points, replace=False), :]
+                moving = moving[np.random.choice(moving.shape[0], self.kept_points, replace=False), :]
+                to_reg = to_reg[np.random.choice(to_reg.shape[0], self.kept_points, replace=False), :]
+                ground_truth = ground_truth[np.random.choice(ground_truth.shape[0], self.kept_points, replace=False), :]
+            
+            X1.append(fixed)
+            X2.append(moving)
+            X3.append(to_reg)
+            Y.append(ground_truth)
+
         return [np.array(X1), np.array(X2), np.array(X3)], np.array(Y)
 
     def __generator_PART(self, data):
