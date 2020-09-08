@@ -8,6 +8,7 @@ from tensorflow.keras.layers import (
     Reshape,
     concatenate,
     add,
+    Lambda,
 )
 from tensorflow.keras.layers import Layer
 from tensorflow.keras.models import Model
@@ -104,21 +105,6 @@ def PointNet_features(input_len, dimensions=3, filters=[64, 128, 1024]):
     return model
 
 
-def Point_features(input_len, dimensions=3, filters=[64, 128, 1024]):
-
-    input_points = Input(shape=(input_len, dimensions))
-    # input transformation net
-    x = Conv1D(filters[0], 1, activation="relu")(input_points)
-    for i in filters[1:]:
-        x = Conv1D(i, 1, activation="relu")(x)
-    x = MaxPooling1D(pool_size=input_len)(x)
-    x = Reshape((filters[-1],))(x)
-
-    model = Model(inputs=input_points, outputs=x, name="1DCNN")
-
-    return model
-
-
 def ConvTransformerBlock(input_tensor, ct_activation, filters, skips):
 
     x = input_tensor
@@ -169,6 +155,69 @@ def FreePointTransformer(
 
     model = Model(inputs=[fixed, moved, moving], outputs=out, name="FPT")
 
-    plot_model(model, to_file="model.png", show_shapes=True)  # , expand_nested=True)
+    plot_model(model, to_file="model.png", show_shapes=True, expand_nested=True)
+
+    return model
+
+
+def TPSTransformNet(
+    num_points, 
+    dims=3, 
+    tps_features=27, 
+    sigma=1.0, 
+    ct_activation='relu',
+    pn_filters=[64, 128, 1024],
+    ctn_filters=[1024, 512, 256, 128, 64],
+):
+
+    def tps(inputs):
+        import tensorflow as tf
+        return tf.map_fn(lambda x: register_tps(x[0], x[1]), inputs)
+
+    def register_tps(inputs, y):
+        import tensorflow as tf
+        x = tf.slice(inputs, [0], [tf.shape(inputs)[0]])
+        x = tf.reshape(x, [2, -1, dims])
+
+        c = x[0]
+        x = x[1]
+
+        x_norms = tf.reduce_sum(tf.square(x), axis=1)
+        x_norms = tf.reshape(x_norms, [-1, 1])
+        y_norms = tf.reduce_sum(tf.square(y), axis=1)
+        y_norms = tf.reshape(y_norms, [-1, 1])
+
+        k1 = x_norms * tf.ones([1, tf.keras.backend.int_shape(y)[0]])
+        k2 = tf.ones([tf.keras.backend.int_shape(x)[0], 1]) * tf.transpose(y_norms)
+        k = k1 + k2
+        k -= (2 * tf.matmul(x, y, False, True))
+        k = tf.exp(tf.truediv(k, (-2 * tf.square(sigma))))
+
+        x0 = tf.matmul(k, c, True, False)
+
+        return [x0, y]
+
+    fixed = Input(shape=(num_points, dims), name='Fixed_Model')
+    moved = Input(shape=(num_points, dims), name='Moved_Model')
+    moving = Input(shape=(num_points, dims), name='Moving_Model')
+
+    pointNet = PointNet_features(num_points, dims)
+    
+    fixed_pointNet = pointNet(fixed)
+    moving_pointNet = pointNet(moved)
+
+    point_features = concatenate([fixed_pointNet, moving_pointNet])
+
+    for nodes in ctn_filters:
+        point_features = Dense(nodes, activation=ct_activation)(point_features)
+
+    point_features = Dense(tps_features * dims * 2)(point_features)
+
+    x = Lambda(tps, name='TPS_Registration')([point_features, moving])
+    x = add(x)
+
+    model = Model(inputs=[fixed, moved, moving], outputs=x)
+
+    plot_model(model, to_file='model.png', show_shapes=True, expand_nested=True)
 
     return model
