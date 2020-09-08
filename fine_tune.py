@@ -38,6 +38,7 @@ else:
 def fine_tune(
 	batch_size, 
 	learning_rate, 
+	network_type,
 	freeze=0,
 	rotate=0,
 	displace=0,
@@ -50,8 +51,9 @@ def fine_tune(
 	epochs=5000,
 ):
 
-	if not os.path.exists("./results" + str(sys.argv[2]) + "/"):
-		os.mkdir("./results" + str(sys.argv[2]) + "/")
+	results_path = "./results-PN4D-" + network_type + "-MRUS-d" + str(displace) + "-r" + str(rotate) + "-bs" + str(batch_size) + "-lr" + str(learning_rate) + "/"
+	if not os.path.exists(results_path):
+		os.mkdir(results_path)
 
 	loss_name = str(sys.argv[1])
 	loss_func = None
@@ -139,7 +141,7 @@ def fine_tune(
 	Prediction_Plot_Trn = Prediction_Plotter(
 		first_trn_X,
 		first_trn_Y,
-		"./results" + str(sys.argv[2]) + "/" + loss_name + "-train",
+		results_path + loss_name + "-train",
 	)
 
 	test = DataGenerator(
@@ -172,13 +174,13 @@ def fine_tune(
 	Prediction_Plot_Val = Prediction_Plotter(
 		first_val_X,
 		first_val_Y,
-		"./results" + str(sys.argv[2]) + "/" + loss_name + "-val",
+		results_path + loss_name + "-val",
 	)
 
 	wandb.init(
 		project="fpt-journal",
-		name="PN4D-Baseline MRUS w/ disp+rot bs" + str(batch_size) + " lr" + str(learning_rate),
-		#reinit=True,
+		name="PN4D-" + network_type + " MRUS w/ d" + str(displace) + " r" + str(rotate) + " bs" + str(batch_size) + " lr" + str(learning_rate),
+		reinit=True,
 		#resume=RUN_ID,
 	)
 
@@ -187,19 +189,19 @@ def fine_tune(
 	assert fixed_len == moving_len
 	num_points = fixed_len
 
-	'''
-	model = FreePointTransformer(
-		num_points,
-		dims=4,
-		skips=False,
-	)
-	'''
-	model = TPSTransformNet(
-		num_points,
-		dims=4,
-		tps_features=27,
-		sigma=1.0,
-	)
+	if network_type == 'fpt':
+		model = FreePointTransformer(
+			num_points,
+			dims=4,
+			skips=False,
+		)
+	if network_type == 'tps':
+		model = TPSTransformNet(
+			num_points,
+			dims=4,
+			tps_features=27,
+			sigma=1.0,
+		)
 	init_epoch = 0
 	'''
 	model = load_model(
@@ -208,7 +210,6 @@ def fine_tune(
 	)
 	initial_epoch = wandb.run.step
 	'''
-
 	if freeze == 1:  # Freeze everything except output
 		trainable_layers = ["conv1d_17"]
 		for layer in model.layers:
@@ -267,5 +268,7 @@ if __name__ == "__main__":
 	learning_rate = float(sys.argv[3])
 	batch_size = int(sys.argv[4])
 
-	# batch size, learning rate, freeze, rotate, displace, deform, shuffle, shuff_pts, keep, slices, sweeps, eps
-	fine_tune(batch_size, learning_rate, 0, 45, 1, 0, True, True, 2048, False, False, 50000)
+	# batch size, learning rate, network_type, freeze, rotate, displace, deform, shuffle, shuff_pts, keep, slices, sweeps, eps
+	fine_tune(batch_size, learning_rate, 'fpt', 0,  0, 0, 0, True, True, 2048, False, False, 2000)
+	fine_tune(batch_size, learning_rate, 'fpt', 0,  0, 1, 0, True, True, 2048, False, False, 2000)
+	fine_tune(batch_size, learning_rate, 'fpt', 0, 45, 1, 0, True, True, 2048, False, False, 2000)
