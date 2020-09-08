@@ -7,6 +7,8 @@ import sys
 import tensorflow as tf
 import wandb
 from callbacks import Prediction_Plotter
+from tensorflow.keras.callbacks import ModelCheckpoint
+from data_loader_prostate import DataGenerator
 from predict_prostate import get_mr_us_data
 from losses import chamfer_loss, chamfer_loss_batch, gmm_nll_loss
 from mpl_toolkits.mplot3d import Axes3D
@@ -14,7 +16,7 @@ from wandb.keras import WandbCallback
 from model import FreePointTransformer, TPSTransformNet, MatMul
 
 matplotlib.use("AGG")
-os.environ["CUDA_VISIBLE_DEVICES"] = sys.argv[1]
+os.environ["CUDA_VISIBLE_DEVICES"] = sys.argv[2]
 
 try:
 	v = int(tf.VERSION[0])
@@ -33,11 +35,25 @@ else:
 	from tensorflow.keras.optimizers import Adam
 
 
-def fine_tune(batch_size, learning_rate, freeze, train_method="full"):
-	if not os.path.exists("./results" + str(sys.argv[1]) + "/"):
-		os.mkdir("./results" + str(sys.argv[1]) + "/")
+def fine_tune(
+	batch_size, 
+	learning_rate, 
+	freeze=0,
+	rotate=0,
+	displace=0,
+	deform=0,
+	shuffle=True,
+	shuffle_points=True,
+	kept_points=2048,
+	slices=False,
+	sweeps=False,
+	epochs=5000,
+):
 
-	loss_name = str(sys.argv[2])
+	if not os.path.exists("./results" + str(sys.argv[2]) + "/"):
+		os.mkdir("./results" + str(sys.argv[2]) + "/")
+
+	loss_name = str(sys.argv[1])
 	loss_func = None
 	metric = []
 
@@ -66,235 +82,124 @@ def fine_tune(batch_size, learning_rate, freeze, train_method="full"):
 
 	max_iters = len(all_prostates)
 	split = 0.7
-	dims = [2048, 3]
 
 	X1 = []
 	X2 = []
-	X3 = []
-	Y = []
 	for i in range(0, int(split * max_iters)):
-
-		if train_method == "full":
-			fixed_prostate = all_prostates[i][0][0]
-			fixed_prostate = fixed_prostate[
-				np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False),
-				:,
-			]
-
-			moving_prostate = all_prostates[i][0][1]
-			moving_prostate = moving_prostate[
-				np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False),
-				:,
-			]
-
-		if train_method == "slices":
-			fixed_prostate = all_prostates[i][0][0]
-			fixed_prostate_X = fixed_prostate[fixed_prostate[:, 0] <= 0.02, :]
-			fixed_prostate_X = fixed_prostate_X[fixed_prostate_X[:, 0] >= -0.02, :]
-			fixed_prostate_Y = fixed_prostate[fixed_prostate[:, 1] <= 0.02, :]
-			fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 1] >= -0.02, :]
-			fixed_prostate_slices = np.concatenate(
-				(fixed_prostate_X, fixed_prostate_Y), axis=0
-			)
-			if fixed_prostate.shape[0] > dims[0]:
-				fixed_prostate = fixed_prostate[
-					np.random.choice(
-						fixed_prostate.shape[0], size=dims[0], replace=False
-					),
-					:,
-				]
-			else:
-				fixed_prostate = np.resize(fixed_prostate, dims)
-			if fixed_prostate_slices.shape[0] > dims[0]:
-				fixed_prostate_slices = fixed_prostate_slices[
-					np.random.choice(
-						fixed_prostate_slices.shape[0], size=dims[0], replace=False
-					),
-					:,
-				]
-			else:
-				fixed_prostate_slices = np.resize(fixed_prostate_slices, dims)
-
-			moving_prostate = all_prostates[i][0][1]
-			moving_prostate = moving_prostate[
-				np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False),
-				:,
-			]
-
-		if train_method == "landmarks":
-			fixed_prostate = all_prostates[i][0][0]
-			ROIs = [x for x in all_prostates[i][1:]]
-			if ROIs != []:
-				fixed_ROIs = [x[0] for x in ROIs]
-				fixed_ROIs_u = np.array([np.unique(x[0], axis=0) for x in ROIs])
-				num_points = sum(ROI.shape[0] for ROI in fixed_ROIs_u)
-				fixed_prostate = fixed_prostate[
-					np.random.choice(
-						fixed_prostate.shape[0],
-						size=fixed_prostate.shape[0] - num_points,
-						replace=False,
-					),
-					:,
-				]
-				for ROI in fixed_ROIs_u:
-					fixed_prostate = np.vstack((fixed_prostate, ROI))
-
-			moving_prostate = all_prostates[i][0][1]
-			ROIs = [x for x in all_prostates[i][1:]]
-			if ROIs != []:
-				moving_ROIs = [x[1] for x in ROIs]
-				moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
-				num_points = sum(ROI.shape[0] for ROI in moving_ROIs_u)
-				moving_prostate = moving_prostate[
-					np.random.choice(
-						moving_prostate.shape[0],
-						size=moving_prostate.shape[0] - num_points,
-						replace=False,
-					),
-					:,
-				]
-				for ROI in moving_ROIs_u:
-					moving_prostate = np.vstack((moving_prostate, ROI))
+			
+		fixed_prostate = all_prostates[i][0][0]
+		moving_prostate = all_prostates[i][0][1]
 
 		# Make each data the Fixed, Moving, Moved
 		X1.append(np.array(fixed_prostate))
 		X2.append(np.array(moving_prostate))
-		X3.append(np.array(moving_prostate))
-		Y.append(np.array(fixed_prostate))
-	X_train = np.array([np.array(X1), np.array(X2), np.array(X3)])
-	Y_train = np.array(Y)
+
+	X_train = np.array([np.array(X1), np.array(X2)])
 
 	X1 = []
 	X2 = []
-	X3 = []
-	Y = []
 	for i in range(int(split * max_iters), max_iters):
 
-		if train_method == "full":
-			fixed_prostate = all_prostates[i][0][0]
-			fixed_prostate = fixed_prostate[
-				np.random.choice(fixed_prostate.shape[0], size=dims[0], replace=False),
-				:,
-			]
-
-			moving_prostate = all_prostates[i][0][1]
-			moving_prostate = moving_prostate[
-				np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False),
-				:,
-			]
-
-		if train_method == "slices":
-			fixed_prostate = all_prostates[i][0][0]
-			fixed_prostate_X = fixed_prostate[fixed_prostate[:, 0] <= 0.02, :]
-			fixed_prostate_X = fixed_prostate_X[fixed_prostate_X[:, 0] >= -0.02, :]
-			fixed_prostate_Y = fixed_prostate[fixed_prostate[:, 1] <= 0.02, :]
-			fixed_prostate_Y = fixed_prostate_Y[fixed_prostate_Y[:, 1] >= -0.02, :]
-			fixed_prostate_slices = np.concatenate(
-				(fixed_prostate_X, fixed_prostate_Y), axis=0
-			)
-			if fixed_prostate.shape[0] > dims[0]:
-				fixed_prostate = fixed_prostate[
-					np.random.choice(
-						fixed_prostate.shape[0], size=dims[0], replace=False
-					),
-					:,
-				]
-			else:
-				fixed_prostate = np.resize(fixed_prostate, dims)
-			if fixed_prostate_slices.shape[0] > dims[0]:
-				fixed_prostate_slices = fixed_prostate_slices[
-					np.random.choice(
-						fixed_prostate_slices.shape[0], size=dims[0], replace=False
-					),
-					:,
-				]
-			else:
-				fixed_prostate_slices = np.resize(fixed_prostate_slices, dims)
-
-			moving_prostate = all_prostates[i][0][1]
-			moving_prostate = moving_prostate[
-				np.random.choice(moving_prostate.shape[0], size=dims[0], replace=False),
-				:,
-			]
-
-		if train_method == "landmarks":
-			fixed_prostate = all_prostates[i][0][0]
-			ROIs = [x for x in all_prostates[i][1:]]
-			if ROIs != []:
-				fixed_ROIs = [x[0] for x in ROIs]
-				fixed_ROIs_u = np.array([np.unique(x[0], axis=0) for x in ROIs])
-				num_points = sum(ROI.shape[0] for ROI in fixed_ROIs_u)
-				fixed_prostate = fixed_prostate[
-					np.random.choice(
-						fixed_prostate.shape[0],
-						size=fixed_prostate.shape[0] - num_points,
-						replace=False,
-					),
-					:,
-				]
-				for ROI in fixed_ROIs_u:
-					fixed_prostate = np.vstack((fixed_prostate, ROI))
-
-			moving_prostate = all_prostates[i][0][1]
-			ROIs = [x for x in all_prostates[i][1:]]
-			if ROIs != []:
-				moving_ROIs = [x[1] for x in ROIs]
-				moving_ROIs_u = [np.unique(x[1], axis=0) for x in ROIs]
-				num_points = sum(ROI.shape[0] for ROI in moving_ROIs_u)
-				moving_prostate = moving_prostate[
-					np.random.choice(
-						moving_prostate.shape[0],
-						size=moving_prostate.shape[0] - num_points,
-						replace=False,
-					),
-					:,
-				]
-				for ROI in moving_ROIs_u:
-					moving_prostate = np.vstack((moving_prostate, ROI))
+		fixed_prostate = all_prostates[i][0][0]
+		moving_prostate = all_prostates[i][0][1]
 
 		# Make each data the Fixed, Moving, Moved
 		X1.append(np.array(fixed_prostate))
 		X2.append(np.array(moving_prostate))
-		X3.append(np.array(moving_prostate))
-		Y.append(np.array(fixed_prostate))
-	X_test = np.array([np.array(X1), np.array(X2), np.array(X3)])
-	Y_test = np.array(Y)
 
+	X_test = np.array([np.array(X1), np.array(X2)])
+
+	train = DataGenerator(
+		X_train,
+		batch_size,
+		dims=4,
+		shuffle=shuffle,
+		shuffle_points=shuffle_points,
+		rotate=rotate,
+		displace=displace,
+		deform=deform,
+		kept_points=kept_points,
+		slices=slices,
+		sweeps=sweeps,
+	)
+
+	trn_data = []  # store all the generated data batches
+	trn_labels = []  # store all the generated ground_truth batches
+	max_iter = 1  # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
+	i = 0
+	for d, l in train:
+		trn_data.append(d)
+		trn_labels.append(l)
+		i += 1
+		if i == max_iter:
+			break
+
+	first_trn_X = trn_data[0]
+	first_trn_Y = trn_labels[0]
 	Prediction_Plot_Trn = Prediction_Plotter(
-		[X for X in X_train],
-		Y_train,
-		"./results" + str(sys.argv[1]) + "/" + loss_name + "-train",
+		first_trn_X,
+		first_trn_Y,
+		"./results" + str(sys.argv[2]) + "/" + loss_name + "-train",
 	)
 
-	Prediction_Plot_Val = Prediction_Plotter(
-		[X for X in X_test],
-		Y_test,
-		"./results" + str(sys.argv[1]) + "/" + loss_name + "-val",
+	test = DataGenerator(
+		X_test,
+		batch_size,
+		dims=4,
+		shuffle=shuffle,
+		shuffle_points=shuffle_points,
+		rotate=0,
+		displace=0,
+		deform=0,
+		kept_points=kept_points,
+		slices=slices,
+		sweeps=sweeps,
 	)
-	'''
+
+	val_data = []  # store all the generated data batches
+	val_labels = []  # store all the generated ground_truth batches
+	max_iter = 1  # maximum number of iterations, in each iteration one batch is generated; the proper value depends on batch size and size of whole data
+	i = 0
+	for d, l in test:
+		val_data.append(d)
+		val_labels.append(l)
+		i += 1
+		if i == max_iter:
+			break
+	
+	first_val_X = val_data[0]
+	first_val_Y = val_labels[0]
+	Prediction_Plot_Val = Prediction_Plotter(
+		first_val_X,
+		first_val_Y,
+		"./results" + str(sys.argv[2]) + "/" + loss_name + "-val",
+	)
+
 	wandb.init(
-		project="fpt_journal",
-		name="PN4D MRUS bs" + str(batch_size) + " lr" + str(learning_rate),
+		project="fpt-journal",
+		name="PN4D-Baseline MRUS w/ disp+rot bs" + str(batch_size) + " lr" + str(learning_rate),
 		#reinit=True,
 		#resume=RUN_ID,
 	)
+
+	fixed_len = trn_data[0][0].shape[1]
+	moving_len = trn_data[0][1].shape[1]
+	assert fixed_len == moving_len
+	num_points = fixed_len
+
 	'''
 	model = FreePointTransformer(
-		dims[0],
-		dims=3,
-		pn_filters=[64, 128, 1024],
-		ctn_filters=[1024, 512, 256, 128, 64],
+		num_points,
+		dims=4,
 		skips=False,
 	)
 	'''
 	model = TPSTransformNet(
-		dims[0],
-		dims=3,
+		num_points,
+		dims=4,
 		tps_features=27,
 		sigma=1.0,
 	)
-	'''
-
 	init_epoch = 0
 	'''
 	model = load_model(
@@ -341,22 +246,20 @@ def fine_tune(batch_size, learning_rate, freeze, train_method="full"):
 	optimizer = Adam(lr=learning_rate)
 	model.compile(optimizer=optimizer, loss=loss_func, metrics=metric)
 
-	history = model.fit(
-		[X for X in X_train],
-		Y_train,
-		batch_size,
-		epochs=100,
+	history = model.fit_generator(
+		train,
+		steps_per_epoch=int(split * max_iters) // batch_size,
+		epochs=epochs,
 		initial_epoch=init_epoch,
-		validation_data=([X for X in X_test], Y_test),
+		validation_data=test,
 		callbacks=[
 			Prediction_Plot_Trn, 
 			Prediction_Plot_Val, 
-			#WandbCallback()
+			WandbCallback(log_weights=True)
 		],
-		verbose=1,
+		verbose=2,
 	)
 
-	model.save("./results" + str(sys.argv[1]) + "/CTN-" + loss_name + ".h5")
 	model.save(os.path.join(wandb.run.dir, "model.h5"))
 
 if __name__ == "__main__":
@@ -364,4 +267,5 @@ if __name__ == "__main__":
 	learning_rate = float(sys.argv[3])
 	batch_size = int(sys.argv[4])
 
-	fine_tune(batch_size, learning_rate, freeze=0)
+	# batch size, learning rate, freeze, rotate, displace, deform, shuffle, shuff_pts, keep, slices, sweeps, eps
+	fine_tune(batch_size, learning_rate, 0, 45, 1, 0, True, True, 2048, False, False, 50000)
