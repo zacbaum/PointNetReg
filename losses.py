@@ -5,7 +5,6 @@ import tensorflow_probability as tfp
 
 tfd = tfp.distributions
 
-
 def chamfer_distance(y_true, y_pred):
     if K.int_shape(y_pred)[1] == 4:
         y_pred = y_pred[:, :-1]

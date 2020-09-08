@@ -116,8 +116,8 @@ def set_plot_ax_lims(axes, limit=1):
 		ax.set_xlim([-limit, limit])
 		ax.set_ylim([-limit, limit])
 		ax.set_zlim([-limit, limit])
-		#ax.grid(False)
-		#ax.set_axis_off()
+		ax.grid(False)
+		ax.set_axis_off()
 
 def denormalize(unique_points, reference_points):
 	unique_points_dn = 0.5 * ((unique_points * np.ptp(reference_points)) + (2 * np.min(reference_points)) + np.ptp(reference_points))
@@ -1720,5 +1720,6 @@ def predict_prostate_file(fname):
 			f.write(result_string)
 			f.close()
 	'''
+if __name__ == "__main__":
 
-predict_mr_us_file_Sweep('')
+	predict_mr_us_file_Sweep('')

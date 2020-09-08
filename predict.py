@@ -8,7 +8,7 @@ import matplotlib.pyplot as plt
 matplotlib.use('AGG')
 import os
 os.environ["CUDA_VISIBLE_DEVICES"]='CPU'
-from model import MatMul, ConditionalTransformerNet
+from model import MatMul, FreePointTransformer
 import h5py
 from data_loader import DataGenerator
 from cpd import deformable_registration, gaussian_kernel
@@ -226,100 +226,102 @@ def predict_mn40(fname, outname, rotate=0, displace=0, deform=0, part=0, part_nn
 			f.write(result_string)
 			f.close()
 
-predict_mn40('PN 4D', 'CPD-nodefm', rotate=45, displace=0.5)
-predict_mn40('PN 4D', 'CPD', rotate=45, displace=0.5, deform=0.1)
+if __name__ == "__main__":
 
-'''
-predict_mn40('PN 4D', 'PN-4D-nodefm', rotate=45, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D', rotate=45, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'CPD-nodefm', rotate=45, displace=0.5)
+	predict_mn40('PN 4D', 'CPD', rotate=45, displace=0.5, deform=0.1)
 
-predict_mn40('PN 4D', 'PN-4D-gn001', rotate=45, displace=0.5, deform=0.1, noise=0.01)
-predict_mn40('PN 4D', 'PN-4D-gn002', rotate=45, displace=0.5, deform=0.1, noise=0.02)
-predict_mn40('PN 4D', 'PN-4D-gn004', rotate=45, displace=0.5, deform=0.1, noise=0.04)
+	'''
+	predict_mn40('PN 4D', 'PN-4D-nodefm', rotate=45, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D', rotate=45, displace=0.5, deform=0.1)
 
-predict_mn40('PN 4D', 'PN-4D-df01', rotate=45, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-df02', rotate=45, displace=0.5, deform=0.2)
-predict_mn40('PN 4D', 'PN-4D-df04', rotate=45, displace=0.5, deform=0.4)
+	predict_mn40('PN 4D', 'PN-4D-gn001', rotate=45, displace=0.5, deform=0.1, noise=0.01)
+	predict_mn40('PN 4D', 'PN-4D-gn002', rotate=45, displace=0.5, deform=0.1, noise=0.02)
+	predict_mn40('PN 4D', 'PN-4D-gn004', rotate=45, displace=0.5, deform=0.1, noise=0.04)
 
-predict_mn40('PN 4D P1', 'PN-4D-P1-75d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.75)
-predict_mn40('PN 4D P1', 'PN-4D-P2-75d', rotate=45, displace=0.5, deform=0.1, part=2, part_nn=0.75)
-'''
+	predict_mn40('PN 4D', 'PN-4D-df01', rotate=45, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-df02', rotate=45, displace=0.5, deform=0.2)
+	predict_mn40('PN 4D', 'PN-4D-df04', rotate=45, displace=0.5, deform=0.4)
 
-'''
-# Rotation
-## PN 4D
-predict_mn40('PN 4D', 'PN-4D-10', rotate=10, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-20', rotate=20, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-30', rotate=30, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-40', rotate=40, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-50', rotate=50, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-60', rotate=60, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-70', rotate=70, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-80', rotate=80, displace=0.5)
-predict_mn40('PN 4D', 'PN-4D-90', rotate=90, displace=0.5)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-75d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.75)
+	predict_mn40('PN 4D P1', 'PN-4D-P2-75d', rotate=45, displace=0.5, deform=0.1, part=2, part_nn=0.75)
+	'''
 
-predict_mn40('PN 4D', 'PN-4D-00d', rotate=00, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-10d', rotate=10, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-20d', rotate=20, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-30d', rotate=30, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-40d', rotate=40, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-50d', rotate=50, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-60d', rotate=60, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-70d', rotate=70, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-80d', rotate=80, displace=0.5, deform=0.1)
-predict_mn40('PN 4D', 'PN-4D-90d', rotate=90, displace=0.5, deform=0.1)
+	'''
+	# Rotation
+	## PN 4D
+	predict_mn40('PN 4D', 'PN-4D-10', rotate=10, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-20', rotate=20, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-30', rotate=30, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-40', rotate=40, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-50', rotate=50, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-60', rotate=60, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-70', rotate=70, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-80', rotate=80, displace=0.5)
+	predict_mn40('PN 4D', 'PN-4D-90', rotate=90, displace=0.5)
 
-# Deformation
-## PN 4D
-predict_mn40('PN 4D', 'PN-4D-0.00d-only', deform=0.00)
-predict_mn40('PN 4D', 'PN-4D-0.05d-only', deform=0.05)
-predict_mn40('PN 4D', 'PN-4D-0.10d-only', deform=0.10)
-predict_mn40('PN 4D', 'PN-4D-0.20d-only', deform=0.20)
-predict_mn40('PN 4D', 'PN-4D-0.40d-only', deform=0.40)
+	predict_mn40('PN 4D', 'PN-4D-00d', rotate=00, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-10d', rotate=10, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-20d', rotate=20, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-30d', rotate=30, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-40d', rotate=40, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-50d', rotate=50, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-60d', rotate=60, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-70d', rotate=70, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-80d', rotate=80, displace=0.5, deform=0.1)
+	predict_mn40('PN 4D', 'PN-4D-90d', rotate=90, displace=0.5, deform=0.1)
 
-predict_mn40('PN 4D', 'PN-4D-0.00d', rotate=45, displace=0.5, deform=0.00)
-predict_mn40('PN 4D', 'PN-4D-0.05d', rotate=45, displace=0.5, deform=0.05)
-predict_mn40('PN 4D', 'PN-4D-0.10d', rotate=45, displace=0.5, deform=0.10)
-predict_mn40('PN 4D', 'PN-4D-0.20d', rotate=45, displace=0.5, deform=0.20)
-predict_mn40('PN 4D', 'PN-4D-0.40d', rotate=45, displace=0.5, deform=0.40)
+	# Deformation
+	## PN 4D
+	predict_mn40('PN 4D', 'PN-4D-0.00d-only', deform=0.00)
+	predict_mn40('PN 4D', 'PN-4D-0.05d-only', deform=0.05)
+	predict_mn40('PN 4D', 'PN-4D-0.10d-only', deform=0.10)
+	predict_mn40('PN 4D', 'PN-4D-0.20d-only', deform=0.20)
+	predict_mn40('PN 4D', 'PN-4D-0.40d-only', deform=0.40)
 
-# Gaussian Noise
-## PN 4D
-predict_mn40('PN 4D', 'PN-4D-gn0.000', rotate=45, displace=0.5, noise=0)
-predict_mn40('PN 4D', 'PN-4D-gn0.005', rotate=45, displace=0.5, noise=0.005)
-predict_mn40('PN 4D', 'PN-4D-gn0.010', rotate=45, displace=0.5, noise=0.01)
-predict_mn40('PN 4D', 'PN-4D-gn0.020', rotate=45, displace=0.5, noise=0.02)
-predict_mn40('PN 4D', 'PN-4D-gn0.040', rotate=45, displace=0.5, noise=0.04)
+	predict_mn40('PN 4D', 'PN-4D-0.00d', rotate=45, displace=0.5, deform=0.00)
+	predict_mn40('PN 4D', 'PN-4D-0.05d', rotate=45, displace=0.5, deform=0.05)
+	predict_mn40('PN 4D', 'PN-4D-0.10d', rotate=45, displace=0.5, deform=0.10)
+	predict_mn40('PN 4D', 'PN-4D-0.20d', rotate=45, displace=0.5, deform=0.20)
+	predict_mn40('PN 4D', 'PN-4D-0.40d', rotate=45, displace=0.5, deform=0.40)
 
-predict_mn40('PN 4D', 'PN-4D-gn0.000d', rotate=45, displace=0.5, deform=0.1, noise=0)
-predict_mn40('PN 4D', 'PN-4D-gn0.005d', rotate=45, displace=0.5, deform=0.1, noise=0.005)
-predict_mn40('PN 4D', 'PN-4D-gn0.010d', rotate=45, displace=0.5, deform=0.1, noise=0.01)
-predict_mn40('PN 4D', 'PN-4D-gn0.020d', rotate=45, displace=0.5, deform=0.1, noise=0.02)
-predict_mn40('PN 4D', 'PN-4D-gn0.040d', rotate=45, displace=0.5, deform=0.1, noise=0.04)
+	# Gaussian Noise
+	## PN 4D
+	predict_mn40('PN 4D', 'PN-4D-gn0.000', rotate=45, displace=0.5, noise=0)
+	predict_mn40('PN 4D', 'PN-4D-gn0.005', rotate=45, displace=0.5, noise=0.005)
+	predict_mn40('PN 4D', 'PN-4D-gn0.010', rotate=45, displace=0.5, noise=0.01)
+	predict_mn40('PN 4D', 'PN-4D-gn0.020', rotate=45, displace=0.5, noise=0.02)
+	predict_mn40('PN 4D', 'PN-4D-gn0.040', rotate=45, displace=0.5, noise=0.04)
 
-'''
-# Partial
-## PN 4D P1
-'''
-predict_mn40('PN 4D P1', 'PN-4D-P1-95', rotate=45, displace=0.5, part=1, part_nn=0.95)
-predict_mn40('PN 4D P1', 'PN-4D-P1-90', rotate=45, displace=0.5, part=1, part_nn=0.90)
-predict_mn40('PN 4D P1', 'PN-4D-P1-85', rotate=45, displace=0.5, part=1, part_nn=0.85)
-predict_mn40('PN 4D P1', 'PN-4D-P1-80', rotate=45, displace=0.5, part=1, part_nn=0.80)
-predict_mn40('PN 4D P1', 'PN-4D-P1-75', rotate=45, displace=0.5, part=1, part_nn=0.75)
-predict_mn40('PN 4D P1', 'PN-4D-P1-70', rotate=45, displace=0.5, part=1, part_nn=0.70)
-predict_mn40('PN 4D P1', 'PN-4D-P1-65', rotate=45, displace=0.5, part=1, part_nn=0.65)
-predict_mn40('PN 4D P1', 'PN-4D-P1-60', rotate=45, displace=0.5, part=1, part_nn=0.60)
-predict_mn40('PN 4D P1', 'PN-4D-P1-55', rotate=45, displace=0.5, part=1, part_nn=0.55)
-predict_mn40('PN 4D P1', 'PN-4D-P1-50', rotate=45, displace=0.5, part=1, part_nn=0.50)
+	predict_mn40('PN 4D', 'PN-4D-gn0.000d', rotate=45, displace=0.5, deform=0.1, noise=0)
+	predict_mn40('PN 4D', 'PN-4D-gn0.005d', rotate=45, displace=0.5, deform=0.1, noise=0.005)
+	predict_mn40('PN 4D', 'PN-4D-gn0.010d', rotate=45, displace=0.5, deform=0.1, noise=0.01)
+	predict_mn40('PN 4D', 'PN-4D-gn0.020d', rotate=45, displace=0.5, deform=0.1, noise=0.02)
+	predict_mn40('PN 4D', 'PN-4D-gn0.040d', rotate=45, displace=0.5, deform=0.1, noise=0.04)
 
-predict_mn40('PN 4D P1', 'PN-4D-P1-95d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.95)
-predict_mn40('PN 4D P1', 'PN-4D-P1-90d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.90)
-predict_mn40('PN 4D P1', 'PN-4D-P1-85d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.85)
-predict_mn40('PN 4D P1', 'PN-4D-P1-80d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.80)
-predict_mn40('PN 4D P1', 'PN-4D-P1-75d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.75)
-predict_mn40('PN 4D P1', 'PN-4D-P1-70d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.70)
-predict_mn40('PN 4D P1', 'PN-4D-P1-65d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.65)
-predict_mn40('PN 4D P1', 'PN-4D-P1-60d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.60)
-predict_mn40('PN 4D P1', 'PN-4D-P1-55d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.55)
-predict_mn40('PN 4D P1', 'PN-4D-P1-50d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.50)
-'''
+	'''
+	# Partial
+	## PN 4D P1
+	'''
+	predict_mn40('PN 4D P1', 'PN-4D-P1-95', rotate=45, displace=0.5, part=1, part_nn=0.95)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-90', rotate=45, displace=0.5, part=1, part_nn=0.90)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-85', rotate=45, displace=0.5, part=1, part_nn=0.85)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-80', rotate=45, displace=0.5, part=1, part_nn=0.80)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-75', rotate=45, displace=0.5, part=1, part_nn=0.75)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-70', rotate=45, displace=0.5, part=1, part_nn=0.70)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-65', rotate=45, displace=0.5, part=1, part_nn=0.65)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-60', rotate=45, displace=0.5, part=1, part_nn=0.60)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-55', rotate=45, displace=0.5, part=1, part_nn=0.55)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-50', rotate=45, displace=0.5, part=1, part_nn=0.50)
+
+	predict_mn40('PN 4D P1', 'PN-4D-P1-95d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.95)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-90d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.90)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-85d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.85)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-80d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.80)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-75d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.75)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-70d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.70)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-65d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.65)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-60d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.60)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-55d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.55)
+	predict_mn40('PN 4D P1', 'PN-4D-P1-50d', rotate=45, displace=0.5, deform=0.1, part=1, part_nn=0.50)
+	'''
