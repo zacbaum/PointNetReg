@@ -141,16 +141,16 @@ class DataGenerator(Sequence):
                 ground_truth = np.resize(ground_truth, dims)
 
             if self.dims == 4:
-                moving_with_ones = np.ones((dims[0], dims[1] + 1))
+                moving_with_ones = np.ones((dims[0], self.dims))
                 moving_with_ones[:, :-1] = moving
                 moving = moving_with_ones
-                to_reg_with_ones = np.ones((dims[0], dims[1] + 1))
+                to_reg_with_ones = np.ones((dims[0], self.dims))
                 to_reg_with_ones[:, :-1] = to_reg
                 to_reg = to_reg_with_ones
-                fixed_with_ones = np.ones((dims[0], dims[1] + 1))
+                fixed_with_ones = np.ones((dims[0], self.dims))
                 fixed_with_ones[:, :-1] = fixed
                 fixed = fixed_with_ones
-                gt_with_ones = np.ones((dims[0], dims[1] + 1))
+                gt_with_ones = np.ones((dims[0], self.dims))
                 gt_with_ones[:, :-1] = ground_truth
                 ground_truth = gt_with_ones
 
@@ -160,12 +160,12 @@ class DataGenerator(Sequence):
                 to_reg = to_reg[np.random.permutation(to_reg.shape[0]), :]
                 ground_truth = ground_truth[np.random.permutation(ground_truth.shape[0]), :]
 
-            if self.kept_points:
+            if self.kept_points < dims[0]:
                 fixed = fixed[np.random.choice(fixed.shape[0], self.kept_points, replace=False), :]
                 moving = moving[np.random.choice(moving.shape[0], self.kept_points, replace=False), :]
                 to_reg = to_reg[np.random.choice(to_reg.shape[0], self.kept_points, replace=False), :]
                 ground_truth = ground_truth[np.random.choice(ground_truth.shape[0], self.kept_points, replace=False), :]
-            
+
             X1.append(fixed)
             X2.append(moving)
             X3.append(to_reg)
