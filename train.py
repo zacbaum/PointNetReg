@@ -15,7 +15,7 @@ from keras import backend as K
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.optimizers import Adam
 from losses import chamfer_loss, chamfer_loss_batch, gmm_nll_loss
-from model import FreePointTransformer, MatMul
+from model import FreePointTransformer, TPSTransformNet, MatMul
 from mpl_toolkits.mplot3d import Axes3D
 from wandb.keras import WandbCallback
 
@@ -35,7 +35,18 @@ else:
     from keras.engine.topology import Layer
 
 
-def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, epochs):
+def train(
+    load,
+    batch_size,
+    learning_rate,
+    rotate,
+    displace,
+    deform,
+    part_nn,
+    shuffle,
+    kept,
+    epochs,
+):
     train_file = "./ModelNet40/ply_data_train.h5"
     train = h5py.File(train_file, mode="r")
     test_file = "./ModelNet40/ply_data_test.h5"
@@ -55,8 +66,8 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, ep
         loss_func = chamfer_loss_batch
 
     if loss_name == "gmm_nll_loss":
-        loss_func = gmm_nll_loss(0.01, 0.1)
-        metrics = [chamfer_loss]
+        loss_func = gmm_nll_loss(0.001, 0.1)
+        metrics = [chamfer_loss_batch]
 
     train = DataGenerator(
         train,
@@ -66,9 +77,10 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, ep
         displace=displace,
         deform=deform,
         dims=4,
-        part=1,
-        part_nn=int(2048 * part_nn),
-        shuffle_points=True,
+        # part=1,
+        # part_nn=int(2048 * part_nn),
+        shuffle_points=shuffle,
+        kept_points=kept,
     )
 
     val = DataGenerator(
@@ -79,9 +91,10 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, ep
         displace=displace,
         deform=deform,
         dims=4,
-        part=1,
-        part_nn=int(2048 * part_nn),
-        shuffle_points=True,
+        # part=1,
+        # part_nn=int(2048 * part_nn),
+        shuffle_points=shuffle,
+        kept_points=kept,
     )
 
     val_data = []  # store all the generated data batches
@@ -108,10 +121,14 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, ep
     num_points = fixed_len
 
     if not load:
-        wandb.init(project="ctn-chamfer", name="PN 4D Curr", id="0221")
-    else:
-        wandb.init(project="ctn-chamfer", name="PN 4D Curr", resume="0221")
+        wandb.init(
+            project="fpt-journal",
+            name="PN4D-Baseline MN40 bs" + str(batch_size) + " lr" + str(learning_rate),
+        )
+    # else:
+    #    wandb.init(project="fpt-journal", name="PN4D MN40 bs32 lr1e-3", resume="GET ID FROM PROJECT IF RESTARTING")
 
+    """
     model = FreePointTransformer(
         num_points,
         dims=4,
@@ -119,6 +136,14 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, ep
         ctn_filters=[1024, 512, 256, 128, 64],
         skips=False,
     )
+    """
+    model = TPSTransformNet(
+        num_points,
+        dims=4,
+        tps_features=27,
+        sigma=1.0,
+    )
+
     initial_epoch = 0
     if load:
         model = load_model(
@@ -140,7 +165,9 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, ep
     print("Rotation:        " + str(rotate))
     print("Displacement:    " + str(displace))
     print("Deformation:     " + str(deform))
-    print("Occlusion:       " + str(100 * (1 - part_nn)) + "%")
+    print("Points Kept:     " + str(kept))
+    print("Shuffle:         " + str(shuffle))
+    # print("Occlusion:       " + str(100 * (1 - part_nn)) + "%")
     print("Epochs to Train: " + str(epochs) + "\n")
 
     history = model.fit_generator(
@@ -152,10 +179,12 @@ def train(load, batch_size, learning_rate, rotate, displace, deform, part_nn, ep
         validation_steps=num_val // batch_size,
         callbacks=[
             Prediction_Plot_Val,
-            ModelCheckpoint(os.path.join(wandb.run.dir, "model-checkpoint.h5")),
+            ModelCheckpoint(
+                os.path.join(wandb.run.dir, "model-{epoch:04d}.h5"), save_best_only=True
+            ),
             WandbCallback(log_weights=True),
         ],
-        verbose=1,
+        verbose=2,
     )
 
     model.save(os.path.join(wandb.run.dir, "model.h5"))
@@ -166,21 +195,5 @@ if __name__ == "__main__":
     learning_rate = float(sys.argv[3])
     batch_size = int(sys.argv[4])
 
-    # order, batch_size, learning_rate, rotate, displace, deform, part_nn, epochs
-    train(0,  batch_size, learning_rate, 10, 0.00, 0.0, 1.0, 50)
-    train(1,  batch_size, learning_rate, 15, 0.00, 0.0, 1.0, 50)
-    train(2,  batch_size, learning_rate, 20, 0.00, 0.0, 1.0, 50)
-    train(3,  batch_size, learning_rate, 25, 0.00, 0.0, 1.0, 50)
-    train(4,  batch_size, learning_rate, 30, 0.00, 0.0, 1.0, 50)
-    train(5,  batch_size, learning_rate, 35, 0.00, 0.0, 1.0, 50)
-    train(6,  batch_size, learning_rate, 40, 0.00, 0.0, 1.0, 50)
-    train(7,  batch_size, learning_rate, 45, 0.00, 0.0, 1.0, 50)
-    train(8,  batch_size, learning_rate, 45, 0.25, 0.0, 1.0, 50)
-    train(9,  batch_size, learning_rate, 45, 0.50, 0.0, 1.0, 50)
-    train(10, batch_size, learning_rate, 45, 0.75, 0.0, 1.0, 50)
-    train(11, batch_size, learning_rate, 45, 1.00, 0.0, 1.0, 50)
-    train(12, batch_size, learning_rate, 45, 1.00, 0.025, 1.0, 50)
-    train(13, batch_size, learning_rate, 45, 1.00, 0.050, 1.0, 50)
-    train(14, batch_size, learning_rate, 45, 1.00, 0.075, 1.0, 50)
-    train(15, batch_size, learning_rate, 45, 1.00, 0.100, 1.0, 500)
-
+    # order, batch_size, learning_rate, rotate, displace, deform, part_nn, shuffle, kept, epochs
+    train(0, batch_size, learning_rate, 45, 1.00, 0.10, 0.0, True, 2048, 5000)
