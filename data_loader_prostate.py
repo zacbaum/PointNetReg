@@ -16,7 +16,7 @@ class DataGenerator(Sequence):
         shuffle_points=False,
         kept_points=2048,
         slices=False,
-        sweeps=False,
+        sweeps=0,
     ):
         self.data = data
         self.batch_size = batch_size
@@ -110,12 +110,51 @@ class DataGenerator(Sequence):
                 fixed = np.concatenate((fixed_X, fixed_Y), axis=0)
 
             if self.sweeps:
-                pass
+                thresh = 0.02
+                swept_prostate = np.array([])
+
+                TRUS_tip = np.array([0, 1, -1])
+                TRUS_end = np.array([0, -1, -1])
+
+                if self.sweeps == 1:
+                    P = np.array([0, 0, 1])
+                    a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
+                    d = -(a * P[0] + b * P[1] + c * P[2])
+                    for point in fixed:
+                        if point_plane_distance(point, a, b, c, d) < thresh:
+                            swept_prostate = np.append(swept_prostate, point)
+
+                elif self.sweeps == 2:
+                    P = np.array([-0.5, 0, 1])
+                    a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
+                    d = -(a * P[0] + b * P[1] + c * P[2])
+                    for point in fixed:
+                        if point_plane_distance(point, a, b, c, d) < thresh:
+                            swept_prostate = np.append(swept_prostate, point)
+                    P = np.array([0.5, 0, 1])
+                    a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
+                    d = -(a * P[0] + b * P[1] + c * P[2])
+                    for point in fixed:
+                        if point_plane_distance(point, a, b, c, d) < thresh:
+                            swept_prostate = np.append(swept_prostate, point)
+
+                else:
+                    end_points = np.linspace(-1, 1, self.sweeps)
+                    for end_point in end_points:
+                        P = np.array([end_point, 0, 1])
+                        a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
+                        d = -(a * P[0] + b * P[1] + c * P[2])
+                        for point in fixed:
+                            if point_plane_distance(point, a, b, c, d) < thresh:
+                                swept_prostate = np.append(swept_prostate, point)
+
+                swept_prostate = np.reshape(swept_prostate, (-1, self.dims))
+                fixed = np.resize(swept_prostate, (self.kept_points, self.dims))
 
             fixed = fixed[np.random.choice(fixed.shape[0], self.kept_points, replace=False), :] if self.kept_points < fixed.shape[0] else fixed
-            moving = moving[np.random.choice(moving.shape[0], self.kept_points, replace=False), :] if self.kept_points < moving.shape[0] else fixed
-            to_reg = to_reg[np.random.choice(to_reg.shape[0], self.kept_points, replace=False), :] if self.kept_points < to_reg.shape[0] else fixed
-            ground_truth = ground_truth[np.random.choice(ground_truth.shape[0], self.kept_points, replace=False), :] if self.kept_points < ground_truth.shape[0] else fixed
+            moving = moving[np.random.choice(moving.shape[0], self.kept_points, replace=False), :] if self.kept_points < moving.shape[0] else moving
+            to_reg = to_reg[np.random.choice(to_reg.shape[0], self.kept_points, replace=False), :] if self.kept_points < to_reg.shape[0] else to_reg
+            ground_truth = ground_truth[np.random.choice(ground_truth.shape[0], self.kept_points, replace=False), :] if self.kept_points < ground_truth.shape[0] else ground_truth
             
             X1.append(fixed)
             X2.append(moving)
@@ -203,3 +242,8 @@ def compute_RBF_defm(y):
     k = compute_RBF(x, y, sigma)
 
     return np.matmul(k.T, c) + y
+
+
+def point_plane_distance(P, a, b, c, d):
+
+    return np.abs(P[0] * a + P[1] * b + P[2] * c + d) / np.sqrt(a*a + b*b + c*c)
