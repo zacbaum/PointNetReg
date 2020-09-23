@@ -120,23 +120,21 @@ class DataGenerator(Sequence):
                     P = np.array([0, 0, 1])
                     a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
                     d = -(a * P[0] + b * P[1] + c * P[2])
-                    for point in fixed:
-                        if point_plane_distance(point, a, b, c, d) < thresh:
-                            swept_prostate = np.append(swept_prostate, point)
+                    temp = np.array([point for point in fixed if point_plane_distance(point, a, b, c, d) < thresh])
+                    swept_prostate = np.concatenate((swept_prostate, temp), axis=0) if swept_prostate.size else temp
 
                 elif self.sweeps == 2:
                     P = np.array([-0.5, 0, 1])
                     a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
                     d = -(a * P[0] + b * P[1] + c * P[2])
-                    for point in fixed:
-                        if point_plane_distance(point, a, b, c, d) < thresh:
-                            swept_prostate = np.append(swept_prostate, point)
+                    temp = np.array([point for point in fixed if point_plane_distance(point, a, b, c, d) < thresh])
+                    swept_prostate = np.concatenate((swept_prostate, temp), axis=0) if swept_prostate.size else temp
+                    
                     P = np.array([0.5, 0, 1])
                     a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
                     d = -(a * P[0] + b * P[1] + c * P[2])
-                    for point in fixed:
-                        if point_plane_distance(point, a, b, c, d) < thresh:
-                            swept_prostate = np.append(swept_prostate, point)
+                    temp = np.array([point for point in fixed if point_plane_distance(point, a, b, c, d) < thresh])
+                    swept_prostate = np.concatenate((swept_prostate, temp), axis=0) if swept_prostate.size else temp
 
                 else:
                     end_points = np.linspace(-1, 1, self.sweeps)
@@ -144,11 +142,9 @@ class DataGenerator(Sequence):
                         P = np.array([end_point, 0, 1])
                         a, b, c = np.cross(TRUS_tip - TRUS_end, TRUS_tip - P)
                         d = -(a * P[0] + b * P[1] + c * P[2])
-                        for point in fixed:
-                            if point_plane_distance(point, a, b, c, d) < thresh:
-                                swept_prostate = np.append(swept_prostate, point)
+                        temp = np.array([point for point in fixed if point_plane_distance(point, a, b, c, d) < thresh])
+                        swept_prostate = np.concatenate((swept_prostate, temp), axis=0) if swept_prostate.size else temp
 
-                swept_prostate = np.reshape(swept_prostate, (-1, self.dims))
                 fixed = np.resize(swept_prostate, (self.kept_points, self.dims))
 
             fixed = fixed[np.random.choice(fixed.shape[0], self.kept_points, replace=False), :] if self.kept_points < fixed.shape[0] else fixed
