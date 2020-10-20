@@ -147,10 +147,10 @@ class DataGenerator(Sequence):
 
                 fixed = np.resize(swept_prostate, (self.kept_points, self.dims))
 
-            fixed = fixed[np.random.choice(fixed.shape[0], self.kept_points, replace=False), :] if self.kept_points < fixed.shape[0] else fixed
-            moving = moving[np.random.choice(moving.shape[0], self.kept_points, replace=False), :] if self.kept_points < moving.shape[0] else moving
-            to_reg = to_reg[np.random.choice(to_reg.shape[0], self.kept_points, replace=False), :] if self.kept_points < to_reg.shape[0] else to_reg
-            ground_truth = ground_truth[np.random.choice(ground_truth.shape[0], self.kept_points, replace=False), :] if self.kept_points < ground_truth.shape[0] else ground_truth
+            fixed = fixed[np.random.choice(fixed.shape[0], self.kept_points, replace=False), :] if self.kept_points < fixed.shape[0] else np.resize(fixed, (self.kept_points, self.dims))
+            moving = moving[np.random.choice(moving.shape[0], self.kept_points, replace=False), :] if self.kept_points < moving.shape[0] else np.resize(moving, (self.kept_points, self.dims))
+            to_reg = to_reg[np.random.choice(to_reg.shape[0], self.kept_points, replace=False), :] if self.kept_points < to_reg.shape[0] else np.resize(to_reg, (self.kept_points, self.dims))
+            ground_truth = ground_truth[np.random.choice(ground_truth.shape[0], self.kept_points, replace=False), :] if self.kept_points < ground_truth.shape[0] else np.resize(ground_truth, (self.kept_points, self.dims))
             
             X1.append(fixed)
             X2.append(moving)
